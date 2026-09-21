@@ -1,0 +1,1730 @@
+438:  const historiqueFiltre = useMemo(() => {
+439:    const q = rechercheHisto.trim().toLowerCase();
+441:      if (filtreTypeHisto !== "TOUS" && h.kind !== filtreTypeHisto) return false;
+  const historiqueFiltre = useMemo(() => {
+    const q = rechercheHisto.trim().toLowerCase();
+    return historique.filter((h) => {
+      if (filtreTypeHisto !== "TOUS" && h.kind !== filtreTypeHisto) return false;
+      if (!q) return true;
+      return (
+        h.filename.toLowerCase().includes(q) ||
+        h.kind.toLowerCase().includes(q) ||
+        (h.modele ?? "").toLowerCase().includes(q) ||
+        (h.of ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, istorique, rechercheHisto, filtreTypeHisto]);
+
+  // -------------------------------------------------------------------------
+  // Handlers de sélection (réinitialisations en cascade)
+  // -------------------------------------------------------------------------
+  const choisirArticle = (v: string) => {
+    setArticle(v);
+    setArticleOuvert(false);
+    setCouleur("");
+    setManche("");
+    setTaille("");
+    // Mémorise l'article dans les récents (max 4, dédoublonné)
+    setArticlesRecents((prev) => {
+      const suivant = [v, ...prev.filter((x) => x !== v)].slice(0, 4);
+      try {
+        localStorage.setItem("clement-articles-recents", JSON.stringify(suivant));
+      } catch {
+        // stockage indisponible : sans conséquence
+      }
+      return suivant;
+    });
+  };
+  const choisirCouleur = (v: string) => {
+    setCouleur(v);
+    setManche("");
+    setTaille("");
+  };
+  const changerSpe = (v: boolean) => {
+    setSpe(v);
+    setManche("");
+    setTaille("");
+  };
+
+  /** Mémorise les n° d'OF utilisés (max 3, dédoublonnés) pour les proposer en chips. */
+  const memoriserOfs = useCallback((ofs: string[]) => {
+    const valides = [...new Set(ofs.map((o) => o.trim()).filter(Boolean))];
+    if (valides.length === 0) return;
+    setOfsRecents((prev) => {
+      const suivant = [...new Set([...valides, ...prev])].slice(0, 3);
+      try {
+        localStorage.setItem("clement-ofs-recents", JSON.stringify(suivant));
+      } catch {
+        // stockage indisponible : sans conséquence
+      }
+      return suivant;
+    });
+  }, []);
+
+  /** Sélectionne un type et le mémorise comme choix par défaut. */
+  const choisirType = (v: string) => {
+    setTypeValue(v);
+    try {
+      localStorage.setItem("clement-type-defaut", v);
+    } catch {
+      // stockage indisponible : sans conséquence
+    }
+  };
+
+  /** Enregistre les préférences d'imprimante (localStorage + toast). */
+  const enregistrerPrefsImprimante = () => {
+    const prefs: PrefsImprimante = { ...prefsImprimante, nom: prefsImprimante.nom.trim() };
+    if (prefs.active && prefs.nom.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Nom d'imprimante requis",
+        description:
+          "Saisissez le nom exact de l'imprimante Windows ou désactivez la personnalisation.",
+      });
+      return;
+    }
+    try {
+      localStorage.setItem("clement-imprimante", JSON.stringify(prefs));
+    } catch {
+      // stockage indisponible : sans conséquence
+    }
+    setPrefsImprimante(prefs);
+    setDialogImprimante(false);
+    toast({
+      title: "Préférences enregistrées",
+      description: prefs.active
+        ? `Imprimante cible intégrée aux .NLBL : ${prefs.nom}${prefs.dpi ? ` (${prefs.dpi} dpi)` : ""}.`
+        : "Imprimante du modèle conservée (ZDesigner GK420d).",
+    });
+  };
+
+  /** Récupère la structure du .NLBL courant sans le télécharger (vérification). */
+  const chargerApercuFichier = useCallback(async () => {
+    if (!etiquette) return;
+    setApercuFichierEnCours(true);
+    try {
+      const res = await fetch("/api/nlbl/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          labels: [etiquette],
+          printer: imprimanteCible ?? undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(
+          data?.error ?? `Le serveur a renvoyé une erreur (${res.status}).`
+        );
+      }
+      setApercuFichier(await res.json());
+      setDialogApercuFichier(true);
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Aperçu du fichier impossible",
+        description: e instanceof Error ? e.message : "Erreur inconnue.",
+      });
+    } finally {
+      setApercuFichierEnCours(false);
+    }
+  }, [etiquette, imprimanteCible, toast]);
+  const reinitialiser = () => {
+    setArticle("");
+    setCouleur("");
+    setManche("");
+    setTaille("");
+    setOf("");
+    setTypeValue("");
+    setSpe(false);
+  };
+
+  // -------------------------------------------------------------------------
+  // Génération .NLBL / export .TXT / file d'impression
+  // -------------------------------------------------------------------------
+  const genererNlbl = useCallback(
+    async (
+      etiquettes: EtiquetteCalculee[],
+      enCours: (v: boolean) => void,
+      quantites?: number[]
+    ) => {
+      enCours(true);
+      try {
+        const res = await fetch("/api/nlbl", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            labels: etiquettes,
+            printer: imprimanteCible ?? undefined,
+            quantites: quantites ?? undefined,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(
+            data?.error ?? `Le serveur a renvoyé une erreur (${res.status}).`
+          );
+        }
+        const blob = await res.blob();
+        const disposition = res.headers.get("Content-Disposition") ?? "";
+        const filename =
+          /filename="([^"]+)"/.exec(disposition)?.[1] ?? "etiquettes.nlbl";
+        const count = Number(res.headers.get("X-Label-Count") ?? etiquettes.length);
+        const mode = res.headers.get("X-Label-Mode") ?? "nlbl";
+
+        telecharger(blob, filename);
+        memoriserOfs(etiquettes.map((e) => e.of));
+        const copies = Number(res.headers.get("X-Label-Copies") ?? count);
+        toast({
+          title: "Fichier .NLBL généré",
+          description:
+            mode === "zip"
+              ? `${filename} — ${count} fichier${count > 1 ? "s" : ""} .nlbl, ${copies} copies à imprimer (quantités dans le LISEZMOI).`
+              : `${filename} — ${count} étiquette${count > 1 ? "s" : ""}${copies > 1 ? ` ×${copies}` : ""}. Ouvrez-le dans Zebra Designer : les données sont déjà intégrées.`,
+        });
+        chargerHistorique();
+        chargerStats(Number(periodeStats));
+      } catch (e) {
+        toast({
+          variant: "destructive",
+          title: "Échec de la génération .NLBL",
+          description: e instanceof Error ? e.message : "Erreur inconnue.",
+        });
+      } finally {
+        enCours(false);
+      }
+    },
+    [toast, chargerHistorique, chargerStats, memoriserOfs, imprimanteCible, periodeStats]
+  );
+
+  // Raccourci clavier : Ctrl/⌘ + Entrée → générer le fichier .NLBL courant
+  useEffect(() => {
+    const gestionnaire = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (peutGenerer && !generationEnCours && etiquette) {
+          genererNlbl([etiquette], setGenerationEnCours);
+        }
+      }
+    };
+    window.addEventListener("keydown", gestionnaire);
+    return () => window.removeEventListener("keydown", gestionnaire);
+  }, [peutGenerer, generationEnCours, etiquette, genererNlbl]);
+
+  // Copie des 7 variables dans le presse-papiers (format identique à l'export TXT)
+  const copierValeurs = useCallback(async () => {
+    if (!etiquette) return;
+    try {
+      await navigator.clipboard.writeText(exportTxt(etiquette));
+      setValeursCopiees(true);
+      window.setTimeout(() => setValeursCopiees(false), 2000);
+      toast({
+        title: "Valeurs copiées",
+        description: "Les 7 variables sont dans le presse-papiers (format Clé=valeur).",
+      });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Copie impossible",
+        description: "Le navigateur a refusé l'accès au presse-papiers.",
+      });
+    }
+  }, [etiquette, toast]);
+
+  const exporterTxt = useCallback(() => {
+    if (!etiquette) return;
+    const content = exportTxt(etiquette);
+    const safe = (s: string) => String(s).replace(/[^a-zA-Z0-9_-]+/g, "_");
+    const filename = `etiquette_${safe(article)}_${safe(couleur)}_${safe(taille)}_${safe(of)}.txt`;
+    telecharger(
+      new Blob([content], { type: "text/plain;charset=utf-8" }),
+      filename
+    );
+    // Journalisation (n'empêche pas le téléchargement si elle échoue)
+    fetch("/api/generations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "TXT",
+        filename,
+        labelsCount: 1,
+        details: JSON.stringify({ modele: etiquette.modele, of: etiquette.of }),
+      }),
+    })
+      .then(() => {
+        chargerHistorique();
+        chargerStats();
+      })
+      .catch(() => undefined);
+    toast({
+      title: "Fichier .TXT exporté",
+      description: `${filename} — format historique « Charger… » de Zebra Designer conservé.`,
+    });
+  }, [etiquette, article, couleur, taille, of, toast, chargerHistorique, chargerStats]);
+
+  const ajouterALaFile = () => {
+    if (!etiquette) return;
+    if (fileAttente.length >= MAX_ETIQUETTES) {
+      toast({
+        variant: "destructive",
+        title: "File d'impression pleine",
+        description: `Maximum ${MAX_ETIQUETTES} étiquettes par lot.`,
+      });
+      return;
+    }
+    // Avertissement amical si une étiquette identique (modèle + OF) est déjà dans la file
+    const doublon = fileAttente.some(
+      (f) => f.etiquette.modele === etiquette.modele && f.etiquette.of === etiquette.of
+    );
+    if (doublon) {
+      toast({
+        title: "Étiquette déjà présente dans la file",
+        description: `« ${etiquette.modele} — OF ${etiquette.of} » y figure déjà. Pour N copies identiques, augmentez la quantité de la ligne : la consigne est reprise dans le LISEZMOI du .zip.`,
+      });
+    }
+    compteurRef.current += 1;
+    setFileAttente((q) => [
+      ...q,
+      {
+        id: `q-${Date.now()}-${compteurRef.current}`,
+        etiquette,
+        ref: `${etiquette.modele} · ${etiquette.couleur} · ${etiquette.taille} · OF ${etiquette.of}`,
+        quantite: 1,
+      },
+    ]);
+  };
+
+  /** Ajuste la quantité d'une ligne de la file (1-99). */
+  const changerQuantite = (id: string, delta: number) => {
+    setFileAttente((q) =>
+      q.map((f) =>
+        f.id === id
+          ? { ...f, quantite: Math.min(99, Math.max(1, f.quantite + delta)) }
+          : f
+      )
+    );
+  };
+
+  /** Total de copies à imprimer demandées dans la file. */
+  const totalCopiesFile = useMemo(
+    () => fileAttente.reduce((s, f) => s + f.quantite, 0),
+    [fileAttente]
+  );
+
+  // Export du journal complet au format CSV (colonne Modèle / OF incluses)
+  const exporterCsv = useCallback(async () => {
+    setCsvEnCours(true);
+    try {
+      const res = await fetch("/api/generations/export", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`Le serveur a renvoyé une erreur (${res.status}).`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const filename =
+        /filename="([^"]+)"/.exec(disposition)?.[1] ?? "journal_generations.csv";
+      telecharger(blob, filename);
+      toast({
+        title: "Journal exporté au format CSV",
+        description: `${filename} — séparateur « ; », accents préservés (Excel).`,
+      });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Échec de l'export CSV",
+        description: e instanceof Error ? e.message : "Erreur inconnue.",
+      });
+    } finally {
+      setCsvEnCours(false);
+    }
+  }, [toast]);
+
+  const genererLot = () => {
+    if (fileAttente.length === 0) return;
+    genererNlbl(
+      fileAttente.map((f) => f.etiquette),
+      setLotEnCours,
+      fileAttente.map((f) => f.quantite)
+    );
+  };
+
+  // -------------------------------------------------------------------------
+  // Rendu
+  // -------------------------------------------------------------------------
+  return (
+    <div className="flex min-h-screen flex-col bg-zinc-100">
+      {/* En-tête */}
+      <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-900 text-white shadow-sm">
+        <div className="h-1 w-full bg-gradient-to-r from-amber-700 via-amber-400 to-amber-700" aria-hidden="true" />
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-600">
+              <Tags className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wider text-zinc-400">
+                Clément Design
+              </p>
+              <h1 className="text-lg font-bold leading-tight">
+                Générateur d&apos;étiquettes
+              </h1>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Badge
+              variant="outline"
+              className="border-zinc-700 bg-zinc-800 text-zinc-300"
+            >
+              {chargementCatalogue
+                ? "Catalogue…"
+                : `${records.length.toLocaleString("fr-FR")} références`}
+            </Badge>
+            <Badge className="bg-amber-600 text-white hover:bg-amber-600">
+              Zebra Designer Essentials 3
+            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Préférences d'imprimante"
+                  onClick={() => setDialogImprimante(true)}
+                  className="relative h-9 w-9 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                >
+                  <Settings2 className="h-4 w-4" aria-hidden="true" />
+                  {prefsImprimante.active && (
+                    <span
+                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-400 ring-2 ring-zinc-900"
+                      aria-hidden="true"
+                    />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  Préférences d&apos;imprimante — cible actuelle :{" "}
+                  {imprimanteCible ?? "ZDesigner GK420d"}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Aide : mode d'emploi"
+                  onClick={() => setDialogAide(true)}
+                  className="h-9 w-9 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                >
+                  <CircleQuestionMark className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Mode d&apos;emploi (impression avec Zebra Designer)</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
+        {erreurCatalogue && (
+          <Card className="mb-6 border-red-300 bg-red-50">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div className="flex items-center gap-2 text-sm text-red-800">
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                Impossible de charger le catalogue : {erreurCatalogue}
+              </div>
+              <Button size="sm" variant="outline" onClick={chargerCatalogue}>
+                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+                Réessayer
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid gap-6 lg:grid-cols-12">
+          {/* ------------------------- Colonne gauche ------------------------- */}
+          <div className="min-w-0 space-y-6 lg:col-span-7">
+            {/* Formulaire */}
+            <CarteAnimee delai={0}>
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Printer className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                  Référence à étiqueter
+                </CardTitle>
+                <CardDescription>
+                  Sélectionnez l&apos;article, la couleur, la taille, puis saisissez
+                  l&apos;OF et le type de produit.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Article (liste avec recherche) */}
+                <div className="space-y-2">
+                  <Label htmlFor="article">Article</Label>
+                  <Popover open={articleOuvert} onOpenChange={setArticleOuvert}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="article"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={articleOuvert}
+                        className="h-11 w-full justify-between font-normal"
+                        disabled={chargementCatalogue}
+                      >
+                        <span className={article ? "" : "text-muted-foreground"}>
+                          {article || "Rechercher un article…"}
+                        </span>
+                        <svg
+                          className="h-4 w-4 opacity-50"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          aria-hidden="true"
+                        >
+                          <path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
+                        </svg>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Rechercher un article…" />
+                        <CommandList>
+                          <CommandEmpty>Aucun article trouvé.</CommandEmpty>
+                          <CommandGroup>
+                            {articles.map((a) => (
+                              <CommandItem
+                                key={a}
+                                value={a}
+                                onSelect={() => choisirArticle(a)}
+                              >
+                                <CheckCircle2
+                                  className={`mr-2 h-4 w-4 ${
+                                    a === article
+                                      ? "opacity-100 text-amber-600"
+                                      : "opacity-0"
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                                {a}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  {/* Articles récemment utilisés */}
+                  {articlesRecents.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-xs text-muted-foreground">Récents :</span>
+                      {articlesRecents.map((a) => (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => choisirArticle(a)}
+                          className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:border-amber-500 hover:bg-amber-50 hover:text-amber-800 ${
+                            a === article
+                              ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
+                              : "border-zinc-200 bg-white text-zinc-600"
+                          }`}
+                        >
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Couleur / Manche / Taille */}
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="couleur">Couleur</Label>
+                    <Select
+                      value={couleur}
+                      onValueChange={choisirCouleur}
+                      disabled={!article}
+                    >
+                      <SelectTrigger id="couleur" className="h-11 w-full">
+                        <SelectValue placeholder={article ? "Choisir…" : "—"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {couleursList.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c} — {couleurLabel(c)[0]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="manche">Manche</Label>
+                    <Select
+                      value={manche}
+                      onValueChange={setManche}
+                      disabled={!article || !couleur || !mancheApplicable}
+                    >
+                      <SelectTrigger id="manche" className="h-11 w-full">
+                        <SelectValue
+                          placeholder={mancheApplicable ? "Choisir…" : "Sans objet"}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(spe ? ["Longues / Long", "Courtes / Short", "3/4 / 3/4"] : manchesList).map(
+                          (m) => (
+                            <SelectItem key={m} value={m}>
+                              {mancheLabel(m)?.[0] ?? m}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="taille">Taille</Label>
+                    <Select
+                      value={taille}
+                      onValueChange={setTaille}
+                      disabled={!couleur || taillesList.length === 0}
+                    >
+                      <SelectTrigger id="taille" className="h-11 w-full">
+                        <SelectValue placeholder="Choisir…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {taillesList.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t} — {tailleLabel(t)[0]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* OF / Type / SPE */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="of">N° d&apos;OF (ordre de fabrication)</Label>
+                    <Input
+                      id="of"
+                      value={of}
+                      onChange={(e) => setOf(e.target.value)}
+                      placeholder="ex. 078594"
+                      className="h-11"
+                      maxLength={20}
+                      autoComplete="off"
+                    />
+                    {/* Derniers n° d'OF utilisés (reprise en un clic) */}
+                    {ofsRecents.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">Derniers :</span>
+                        {ofsRecents.map((o) => (
+                          <button
+                            key={o}
+                            type="button"
+                            onClick={() => setOf(o)}
+                            className={`rounded-md border px-2 py-0.5 font-mono text-xs transition-colors hover:border-amber-500 hover:bg-amber-50 hover:text-amber-800 ${
+                              o === of
+                                ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
+                                : "border-zinc-200 bg-white text-zinc-600"
+                            }`}
+                          >
+                            {o}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="type">Type de produit</Label>
+                    <Select value={typeValue} onValueChange={choisirType}>
+                      <SelectTrigger id="type" className="h-11 w-full">
+                        <SelectValue placeholder="Choisir…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border bg-zinc-50 p-3">
+                  <div>
+                    <Label htmlFor="spe" className="text-sm font-medium">
+                      Mode SPE
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Code-barres calculé automatiquement (préfixe 99) — manche et
+                      taille libres.
+                    </p>
+                  </div>
+                  <Switch id="spe" checked={spe} onCheckedChange={changerSpe} />
+                </div>
+              </CardContent>
+              <CardFooter className="flex flex-col items-stretch gap-3 border-t bg-zinc-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+                {champsManquants.length > 0 ? (
+                  <p className="flex items-center gap-2 text-sm text-amber-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    À compléter : {champsManquants.join(", ")}
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-2 text-sm text-green-700">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Prêt à générer
+                  </p>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={reinitialiser}
+                  className="self-start sm:self-auto"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Réinitialiser
+                </Button>
+              </CardFooter>
+            </Card>
+            </CarteAnimee>
+
+            {/* File d'impression (lot) */}
+            <CarteAnimee delai={0.08}>
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center justify-between gap-2 text-base">
+                  <span className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                    File d&apos;impression
+                  </span>
+                  <Badge variant="secondary">
+                    {fileAttente.length} / {MAX_ETIQUETTES}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  Ajoutez plusieurs étiquettes pour les générer en lot. Un lot de
+                  N étiquettes produit un fichier .zip contenant un .nlbl par
+                  étiquette, données intégrées ; la quantité de chaque ligne est
+                  reprise dans le LISEZMOI (copies à imprimer).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={ajouterALaFile}
+                    disabled={!peutGenerer || fileAttente.length >= MAX_ETIQUETTES}
+                    className="h-11"
+                  >
+                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Ajouter l&apos;étiquette courante
+                  </Button>
+                  {fileAttente.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => setFileAttente([])}
+                      className="h-11"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                      Vider
+                    </Button>
+                  )}
+                </div>
+
+                {fileAttente.length === 0 ? (
+                  <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed py-6 text-center">
+                    <Layers className="h-6 w-6 text-zinc-300" aria-hidden="true" />
+                    <p className="text-sm text-muted-foreground">
+                      La file est vide — complétez le formulaire, puis ajoutez
+                      l&apos;étiquette courante pour composer un lot.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="max-h-96 overflow-y-auto rounded-lg border">
+                    <ul className="divide-y">
+                      {fileAttente.map((item, index) => (
+                        <li
+                          key={item.id}
+                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-zinc-50"
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <Badge
+                              variant="outline"
+                              className="w-9 shrink-0 justify-center font-mono"
+                            >
+                              {String(index + 1).padStart(2, "0")}
+                            </Badge>
+                            <span className="truncate" title={item.ref}>
+                              {item.ref}
+                            </span>
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {/* Quantité de copies (reprise dans le LISEZMOI du .zip) */}
+                            <div
+                              className="flex items-center rounded-md border bg-white"
+                              role="group"
+                              aria-label={`Quantité de copies pour ${item.ref}`}
+                            >
+                              <button
+                                type="button"
+                                aria-label="Retirer une copie"
+                                disabled={item.quantite <= 1}
+                                onClick={() => changerQuantite(item.id, -1)}
+                                className="flex h-7 w-7 items-center justify-center rounded-l-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-30"
+                              >
+                                <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                              <span
+                                className={`w-9 text-center font-mono text-xs tabular-nums ${
+                                  item.quantite > 1
+                                    ? "font-semibold text-amber-700"
+                                    : "text-zinc-600"
+                                }`}
+                              >
+                                ×{item.quantite}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label="Ajouter une copie"
+                                disabled={item.quantite >= 99}
+                                onClick={() => changerQuantite(item.id, +1)}
+                                className="flex h-7 w-7 items-center justify-center rounded-r-md text-zinc-500 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-30"
+                              >
+                                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              aria-label={`Retirer ${item.ref}`}
+                              className="rounded p-1 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                              onClick={() =>
+                                setFileAttente((q) => q.filter((x) => x.id !== item.id))
+                              }
+                            >
+                              <X className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+              <CardFooter className="border-t bg-zinc-50/60 p-4">
+                <Button
+                  onClick={genererLot}
+                  disabled={fileAttente.length === 0 || lotEnCours}
+                  className="h-11 w-full whitespace-normal bg-amber-600 text-left text-white hover:bg-amber-700 sm:w-auto"
+                >
+                  {lotEnCours ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <FileArchive className="mr-2 h-4 w-4" aria-hidden="true" />
+                  )}
+                  {lotEnCours
+                    ? "Génération du lot…"
+                    : fileAttente.length === 1
+                      ? `Générer le lot — 1 fichier .NLBL${totalCopiesFile > 1 ? ` (×${totalCopiesFile} copies)` : ""}`
+                      : `Générer le lot — archive .zip de ${fileAttente.length} fichiers (${totalCopiesFile} copies)`}
+                </Button>
+              </CardFooter>
+            </Card>
+            </CarteAnimee>
+          </div>
+
+          {/* ------------------------- Colonne droite ------------------------- */}
+          <div className="min-w-0 space-y-6 lg:col-span-5">
+            {/* Aperçu */}
+            <CarteAnimee delai={0.16}>
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center justify-between gap-2 text-base">
+                  <span>Aperçu de l&apos;étiquette</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Agrandir l'aperçu de l'étiquette"
+                        disabled={!etiquette}
+                        onClick={() => setApercuGrand(true)}
+                        className="h-8 w-8 text-zinc-500 hover:text-amber-700"
+                      >
+                        <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Agrandir l&apos;aperçu (vérification avant impression)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </CardTitle>
+                <CardDescription>
+                  Format 55 × 35 mm — rendu identique au modèle cLEMENT2.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Zone de découpe (repère de couteau autour de l'étiquette) */}
+                <div className="relative mx-auto w-full max-w-md">
+                  <div
+                    className="pointer-events-none absolute -inset-2.5 rounded-xl border border-dashed border-zinc-300"
+                    aria-hidden="true"
+                  >
+                    <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-[10px] font-medium uppercase tracking-widest text-zinc-400">
+                      Découpe 55 × 35 mm
+                    </span>
+                  </div>
+                <div
+                  className={`relative mx-auto w-full rounded-lg border-2 bg-white p-4 shadow-md transition-all sm:p-6 ${
+                    peutGenerer
+                      ? "border-green-600 ring-2 ring-green-600/20"
+                      : "border-zinc-300"
+                  }`}
+                  aria-label="Aperçu de l'étiquette"
+                >
+                  {etiquette ? (
+                    <div className="space-y-1 text-black">
+                      <p className="truncate text-center text-2xl font-extrabold tracking-wide sm:text-3xl">
+                        {etiquette.modele}
+                      </p>
+                      <div className="flex items-baseline justify-between text-lg font-bold sm:text-xl">
+                        <span className="truncate">{etiquette.couleur}</span>
+                        <span>{etiquette.taille}</span>
+                      </div>
+                      <div className="my-2 border-t-2 border-black" aria-hidden="true" />
+                      <p className="text-center text-base font-bold sm:text-lg">
+                        {etiquette.type}
+                      </p>
+                      {etiquette.manche && (
+                        <p className="text-center text-sm font-semibold sm:text-base">
+                          {etiquette.manche}
+                        </p>
+                      )}
+                      <div className="mt-3 flex justify-center">
+                        <Ean13Svg code={etiquette.codeBarre} />
+                      </div>
+                      <p className="mt-1 text-center text-lg font-extrabold sm:text-xl">
+                        OF: {etiquette.of || "——"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex h-48 items-center justify-center rounded text-sm text-zinc-400">
+                      Sélectionnez une référence pour prévisualiser l&apos;étiquette.
+                    </div>
+                  )}
+                </div>
+                </div>
+
+                {/* Table des variables (miroir de Zebra Designer) */}
+                {etiquette && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Variables intégrées au fichier
+                      </p>
+                      <div className="flex items-center gap-0.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={chargerApercuFichier}
+                              disabled={apercuFichierEnCours}
+                              className="h-7 px-2 text-xs text-zinc-500 hover:text-amber-700"
+                              aria-label="Afficher le contenu exact du fichier .NLBL"
+                            >
+                              {apercuFichierEnCours ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <FileSearch className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                              )}
+                              Contenu
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Vérifier le contenu exact du fichier (XML, entrées, imprimante)</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={copierValeurs}
+                          className="h-7 px-2 text-xs text-zinc-500 hover:text-amber-700"
+                          aria-label="Copier les 7 variables dans le presse-papiers"
+                        >
+                          {valeursCopiees ? (
+                            <Check className="mr-1 h-3.5 w-3.5 text-green-600" aria-hidden="true" />
+                          ) : (
+                            <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                          )}
+                          {valeursCopiees ? "Copié" : "Copier"}
+                        </Button>
+                      </div>
+                    </div>
+                  <div className="overflow-x-auto rounded-lg border">
+                    <table className="w-full text-sm">
+                      <caption className="sr-only">
+                        Variables qui seront intégrées au fichier .NLBL
+                      </caption>
+                      <tbody className="divide-y">
+                        {(
+                          [
+                            ["Modele", etiquette.modele],
+                            ["Manche", etiquette.manche || "—"],
+                            ["Taille", etiquette.taille],
+                            ["OF", etiquette.of || "—"],
+                            ["Couleur", etiquette.couleur],
+                            ["Type", etiquette.type],
+                            ["CodeBarre", etiquette.codeBarre],
+                          ] as const
+                        ).map(([invite, valeur]) => (
+                          <tr key={invite} className="hover:bg-zinc-50">
+                            <th
+                              scope="row"
+                              className="w-24 bg-zinc-50 px-3 py-1.5 text-left font-medium text-zinc-600"
+                            >
+                              {invite}
+                            </th>
+                            <td className="px-3 py-1.5 font-mono text-xs">
+                              {valeur}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  </div>
+                )}
+              </CardContent>
+              <CardFooter className="flex flex-col gap-3 border-t bg-zinc-50/60 p-4">
+                <Button
+                  onClick={() =>
+                    etiquette && genererNlbl([etiquette], setGenerationEnCours)
+                  }
+                  disabled={!peutGenerer || generationEnCours}
+                  className="h-12 w-full bg-amber-600 text-base font-semibold text-white hover:bg-amber-700"
+                >
+                  {generationEnCours ? (
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <FileDown className="mr-2 h-5 w-5" aria-hidden="true" />
+                  )}
+                  {generationEnCours
+                    ? "Génération en cours…"
+                    : "Générer le fichier .NLBL"}
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  Les données sont intégrées au fichier : ouvrez-le dans Zebra
+                  Designer et imprimez directement — aucune importation de fichier
+                  texte. Astuce : raccourci clavier{" "}
+                  <kbd className="rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 shadow-sm">
+                    Ctrl + ⏎
+                  </kbd>
+                </p>
+                <Separator />
+                <Button
+                  variant="outline"
+                  onClick={exporterTxt}
+                  disabled={!peutGenerer}
+                  className="h-11 w-full whitespace-normal"
+                >
+                  <FileDown className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Exporter le fichier .TXT (historique)
+                </Button>
+              </CardFooter>
+            </Card>
+            </CarteAnimee>
+
+            {/* Historique */}
+            <CarteAnimee delai={0.24}>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-base">
+                  <span className="flex items-center gap-2">
+                    <History className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                    Dernières générations
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Rafraîchir l'historique"
+                        onClick={() => chargerHistorique()}
+                        className="h-8 w-8"
+                      >
+                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Rafraîchir l&apos;historique</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Filtre par type + recherche locale (fichier, modèle, OF) + export CSV */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {([
+                    ["TOUS", "Tous"],
+                    ["NLBL", ".nlbl"],
+                    ["TXT", ".txt"],
+                  ] as const).map(([valeur, libelle]) => {
+                    const effectif =
+                      valeur === "TOUS"
+                        ? historique.length
+                        : historique.filter((h) => h.kind === valeur).length;
+                    return (
+                      <button
+                        key={valeur}
+                        type="button"
+                        onClick={() => setFiltreTypeHisto(valeur)}
+                        aria-pressed={filtreTypeHisto === valeur}
+                        className={`rounded-full border px-2.5 py-0.5 text-xs tabular-nums transition-colors ${
+                          filtreTypeHisto === valeur
+                            ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
+                            : "border-zinc-200 bg-white text-zinc-600 hover:border-amber-400 hover:bg-amber-50"
+                        }`}
+                      >
+                        {libelle} ({effectif})
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search
+                      className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+                      aria-hidden="true"
+                    />
+                    <Input
+                      value={rechercheHisto}
+                      onChange={(e) => setRechercheHisto(e.target.value)}
+                      placeholder="Filtrer par fichier, modèle ou OF…"
+                      className="h-9 pl-8 text-sm"
+                      aria-label="Filtrer le journal des générations"
+                    />
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exporterCsv}
+                        disabled={csvEnCours}
+                        className="h-9 shrink-0"
+                      >
+                        {csvEnCours ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        CSV
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Exporter tout le journal au format CSV (Excel)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+
+                {historique.length === 0 ? (
+                  <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+                    <History className="h-6 w-6 text-zinc-300" aria-hidden="true" />
+                    <p className="text-sm text-muted-foreground">
+                      Aucune génération enregistrée pour le moment.
+                    </p>
+                  </div>
+                ) : historiqueFiltre.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    Aucun fichier ne correspond à « {rechercheHisto} ».
+                  </p>
+                ) : (
+                  <>
+                    <div className="max-h-96 overflow-y-auto rounded-lg border">
+                      <ul className="divide-y">
+                        {historiqueFiltre.map((h) => (
+                        <li
+                          key={h.id}
+                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm transition-colors hover:bg-zinc-50"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <Badge
+                              className={
+                                h.kind === "NLBL"
+                                  ? "shrink-0 bg-amber-600 text-white hover:bg-amber-600"
+                                  : "shrink-0 bg-zinc-200 text-zinc-700 hover:bg-zinc-200"
+                              }
+                            >
+                              {h.kind}
+                            </Badge>
+                            {h.labelsCount > 1 && (
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 border-amber-300 bg-amber-50 font-mono text-[10px] text-amber-800"
+                              >
+                                ×{h.labelsCount}
+                              </Badge>
+                            )}
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate font-mono text-xs" title={h.filename}>
+                                {h.filename}
+                              </span>
+                              {(h.modele || h.of) && (
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {.modele, h.of ? `OF ${h.of}` : null]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {new Date(h.createdAt).toLocaleString("fr-FR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </li>
+                      ))}
+                      </ul>
+                    </div>
+                    {/* Pagination : charge les entrées plus anciennes par pages de 20 */}
+                    <div className="flex flex-col items-center gap-2 border-t pt-3">
+                      <p className="text-[11px] tabular-nums text-muted-foreground">
+                        {historique.length} entrée{historique.length > 1 ? "s" : ""} affichée
+                        {historique.length > 1 ? "s" : ""} sur{" "}
+                        {historiqueTotal.toLocaleString("fr-FR")}
+                        {rechercheHisto
+                          ? " — la recherche porte sur les entrées chargées"
+                          : ""}
+                      </p>
+                      {historiqueEncore && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={chargerPlusHistorique}
+                          disabled={chargerPlusEnCours}
+                          className="h-8"
+                        >
+                          {chargerPlusEnCours ? (
+                            <Loader2
+                              className="mr-2 h-3.5 w-3.5 animate-spin"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <ChevronDown
+                              className="mr-2 h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
+                          )}
+                          Charger plus (20 suivantes)
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            </CarteAnimee>
+          </div>
+
+          {/* ------------------------- Statistiques (pleine largeur) ------------------------- */}
+          <div className="min-w-0 lg:col-span-12">
+            <CarteAnimee delai={0.32}>
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center justify-between gap-2 text-base">
+                  <span className="flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                    Activité ({stats?.jours ?? 7} derniers jours)
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {/* Période de la répartition quotidienne */}
+                    <Select
+                      value={periodeStats}
+                      onValueChange={(v) => {
+                        setPeriodeStats(v);
+                        chargerStats(Number(v));
+                      }}
+                    >
+                      <SelectTrigger
+                        className="h-8 w-[152px] text-xs"
+                        aria-label="Période des statistiques"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="7">7 derniers jours</SelectItem>
+                        <SelectItem value="14">14 derniers jours</SelectItem>
+                        <SelectItem value="30">30 derniers jours</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Rafraîchir les statistiques"
+                          onClick={() => chargerStats(Number(periodeStats))}
+                          className="h-8 w-8"
+                        >
+                          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Rafraîchir les statistiques</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </span>
+                </CardTitle>
+                <CardDescription>
+                  Cumuls totaux et répartition quotidienne des fichiers générés
+                  (fuseau Europe/Paris) — période ajustable.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6 md:grid-cols-3">
+                {/* Indicateurs clés (totaux cumulés + moyenne sur 7 jours) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-sm">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+                      <FileDown className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold leading-none tabular-nums">
+                        {(stats?.totalNlbl ?? 0).toLocaleString("fr-FR")}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">fichiers .NLBL générés</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-sm">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+                      <FileText className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold leading-none tabular-nums">
+                        {(stats?.totalTxt ?? 0).toLocaleString("fr-FR")}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">fichiers .TXT exportés</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-green-300 hover:shadow-sm">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-green-100 text-green-700">
+                      <Tags className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold leading-none tabular-nums">
+                        {(stats?.totalEtiquettes ?? 0).toLocaleString("fr-FR")}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">étiquettes prêtes à imprimer</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-sm">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-orange-100 text-orange-700">
+                      <Hash className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold leading-none tabular-nums">
+                        {(
+                          (stats?.semaineEtiquettes ?? 0) / (stats?.jours ?? 7)
+                        ).toLocaleString("fr-FR", {
+                          maximumFractionDigits: 1,
+                        })}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        étiquettes / jour ({stats?.jours ?? 7} derniers jours)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {/* Graphique (overflow-hidden : évite tout débordement lors d'un redimensionnement) */}
+                <div className="h-56 overflow-hidden md:col-span-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stats?.parJour ?? []} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                      <XAxis
+                        dataKey="libelle"
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={12}
+                        stroke="#71717a"
+                        // Étiquettes espacées sur les longues périodes
+                        interval={
+                          stats && stats.parJour.length > 14
+                            ? 4
+                            : stats && stats.parJour.length > 7
+                              ? 1
+                              : 0
+                        }
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={12}
+                        stroke="#71717a"
+                      />
+                      <ChartTooltip
+                        cursor={{ fill: "rgba(217, 119, 6, 0.07)" }}
+                        contentStyle={{
+                          borderRadius: 8,
+                          border: "1px solid #e4e4e7",
+                          fontSize: 12,
+                        }}
+                        formatter={(valeur, nom) => [String(valeur), nom as string]}
+                      />
+                      <Bar
+                        dataKey="nlbl"
+                        name="Fichiers .NLBL"
+                        fill="#d97706"
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={30}
+                      />
+                      <Bar
+                        dataKey="txt"
+                        name="Fichiers .TXT"
+                        fill="#d4d4d8"
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={30}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+            </CarteAnimee>
+          </div>
+        </div>
+      </main>
+
+      {/* Aperçu agrandi (vérification finale avant impression) */}
+      <Dialog open={apercuGrand} onOpenChange={setApercuGrand}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Vérification avant impression</DialogTitle>
+            <DialogDescription>
+              Contrôlez le modèle, la couleur, la taille, l&apos;OF et le
+              code-barres, puis générez le fichier .NLBL.
+            </DialogDescription>
+          </DialogHeader>
+          {etiquette ? (
+            <div
+              className={`rounded-lg border-2 bg-white p-6 text-black shadow-inner ${
+                peutGenerer ? "border-green-600" : "border-zinc-300"
+              }`}
+              aria-label="Aperçu agrandi de l'étiquette"
+            >
+              <p className="truncate text-center text-4xl font-extrabold tracking-wide">
+                {etiquette.modele}
+              </p>
+              <div className="mt-1 flex items-baseline justify-between text-2xl font-bold">
+                <span className="truncate">{etiquette.couleur}</span>
+                <span>{etiquette.taille}</span>
+              </div>
+              <div className="my-3 border-t-[3px] border-black" aria-hidden="true" />
+              <p className="text-center text-2xl font-bold">{etiquette.type}</p>
+              {etiquette.manche && (
+                <p className="text-center text-xl font-semibold">{etiquette.manche}</p>
+              )}
+              <div className="mt-5 flex justify-center">
+                <Ean13Svg code={etiquette.codeBarre} moduleW={3} />
+              </div>
+              <p className="mt-2 text-center text-2xl font-extrabold">
+                OF: {etiquette.of || "——"}
+              </p>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Sélectionnez une référence pour afficher l&apos;aperçu agrandi.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog : préférences d'imprimante (cible intégrée aux .NLBL) */}
+      <Dialog open={dialogImprimante} onOpenChange={setDialogImprimante}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="h-4 w-4 text-amber-600" aria-hidden="true" />
+              Préférences d&apos;imprimante
+            </DialogTitle>
+            <DialogDescription>
+              Choisit l&apos;imprimante cible intégrée aux fichiers .NLBL. Seuls les
+              réglages d&apos;impression changent — le design du modèle n&apos;est jamais
+              modifié.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-zinc-50 p-3">
+              <div className="min-w-0">
+                <Label htmlFor="prefs-imprimante" className="text-sm font-medium">
+                  Personnaliser l&apos;imprimante
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Sinon, le fichier cible « ZDesigner GK420d » (valeur du modèle).
+                </p>
+              </div>
+              <Switch
+                id="prefs-imprimante"
+                checked={prefsImprimante.active}
+                onCheckedChange={(v) =>
+                  setPrefsImprimante((p) => ({ ...p, active: v }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nom-imprimante">
+                Nom de l&apos;imprimante (nom exact Windows)
+              </Label>
+              <Input
+                id="nom-imprimante"
+                value={prefsImprimante.nom}
+                onChange={(e) =>
+                  setPrefsImprimante((p) => ({ ...p, nom: e.target.value }))
+                }
+                placeholder="ex. ZDesigner GK420d"
+                disabled={!prefsImprimante.active}
+                maxLength={64}
+                list="imprimantes-courantes"
+                className="h-10 font-mono text-sm"
+                autoComplete="off"
+              />
+              <datalist id="imprimantes-courantes">
+                <option value="ZDesigner GK420d" />
+                <option value="ZDesigner GK420t" />
+                <option value="ZDesigner GX430t" />
+                <option value="ZDesigner ZD420-203dpi ZPL" />
+                <option value="ZDesigner ZD621-203dpi ZPL" />
+                <option value="ZDesigner ZP 450-200dpi" />
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                Si l&apos;imprimante n&apos;existe pas sur le poste, Zebra Designer
+                proposera d&apos;en choisir une autre à l&apos;ouverture du fichier.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dpi-imprimante">Résolution (dpi) — rappel</Label>
+              <Select
+                value={prefsImprimante.dpi}
+                onValueChange={(v) => setPrefsImprimante((p) => ({ ...p, dpi: v }))}
+                disabled={!prefsImprimante.active}
+              >
+                <SelectTrigger id="dpi-imprimante" className="h-10 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="203">203 dpi — séries GK / ZP</SelectItem>
+                  <SelectItem value="300">300 dpi — GX430t / ZD621-300</SelectItem>
+                  <SelectItem value="600">600 dpi — ZD621-600</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                À régler au moment de l&apos;impression dans Zebra Designer ;
+                mémorisé ici comme rappel (n&apos;affecte pas le fichier).
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setDialogImprimante(false)}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={enregistrerPrefsImprimante}
+              className="bg-amber-600 text-white hover:bg-amber-700"
+            >
+              <Check className="mr-2 h-4 w-4" aria-hidden="true" />
+              Enregistrer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog : contenu exact du fichier .NLBL (vérification avant impression) */}
+      <Dialog open={dialogApercuFichier} onOpenChange={setDialogApercuFichier}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSearch className="h-4 w-4 text-amber-600" aria-hidden="true" />
+              Contenu du fichier .NLBL
+            </DialogTitle>
+            <DialogDescription>
+              Aperçu exact de ce que contiendra le fichier téléchargé : entrées de
+              l&apos;archive, variables intégrées et XML de la solution.
+            </DialogDescription>
+          </DialogHeader>
+          {apercuFichier && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                <div className="rounded-lg border bg-zinc-50 p-2.5">
+                  <p className="font-medium text-zinc-500">Entrées de l&apos;archive</p>
+                  <p className="mt-0.5 font-mono text-sm tabular-nums text-zinc-900">
+                    {apercuFichier.entrees.length}
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-zinc-50 p-2.5">
+                  <p className="font-medium text-zinc-500">Chiffrement</p>
+                  <p className="mt-0.5 font-mono text-sm text-zinc-900">AES-256</p>
+                </div>
+                <div className="rounded-lg border bg-zinc-50 p-2.5">
+                  <p className="font-medium text-zinc-500">Taille estimée</p>
+                  <p className="mt-0.5 font-mono text-sm tabular-nums text-zinc-900">
+                    {apercuFichier.tailleOctets.toLocaleString("fr-FR")} o
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-zinc-50 p-2.5">
+                  <p className="font-medium text-zinc-500">Imprimante cible</p>
+                  <p className="mt-0.5 truncate font-mono text-sm text-zinc-900" title={apercuFichier.imprimante}>
+                    {apercuFichier.imprimante}
+                  </p>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-lg border">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">
+                    Variables qui seront intégrées au fichier .NLBL
+                  </caption>
+                  <tbody className="divide-y">
+                    {apercuFichier.variables.map((v) => (
+                      <tr key={v.nom} className="hover:bg-zinc-50">
+                        <th
+                          scope="row"
+                          className="w-24 bg-zinc-50 px-3 py-1.5 text-left font-medium text-zinc-600"
+                        >
+                          {v.nom}
+                        </th>
+                        <td className="px-3 py-1.5 font-mono text-xs">
+                          {v.valeur || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <details className="group rounded-lg border">
+                <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-xs font-medium text-zinc-600 hover:text-amber-800">
+                  XML de la solution (variables intégrées, tel que lu par Zebra
+                  Designer)
+                  <span
+                    className="text-[10px] text-zinc-400 group-open:hidden"
+                    aria-hidden="true"
+                  >
+                    afficher ▾
+                  </span>
+                  <span className="hidden text-[10px] text-zinc-400 group-open:inline" aria-hidden="true">
+                    masquer ▴
+                  </span>
+                </summary>
+                <pre
+                  className="max-h-80 overflow-auto bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed text-emerald-200 scrollbar-thin scrollbar-thumb-zinc-700"
+                  aria-label="XML de la solution .NLBL"
+                >
+                  {apercuFichier.xmlSolution}
+                </pre>
+              </details>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog : mode d'emploi intégré */}
+      <Dialog open={dialogAide} onOpenChange={setDialogAide}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Mode d&apos;emploi</DialogTitle>
+            <DialogDescription>
+              Impression directe avec Zebra Designer Essentials 3 — plus aucun
+              import de fichier texte.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+            {[
+              {
+                titre: "Étiquette simple (.NLBL)",
+                texte:
+                  "Complétez le formulaire (article, couleur, manche, taille, OF, type), puis cliquez sur « Générer le fichier .NLBL » (ou Ctrl + ⏎). Ouvrez le fichier téléchargé dans Zebra Designer : les données sont déjà intégrées — réglez la quantité et imprimez.",
+              },
+              {
+                titre: "Lot d'étiquettes (.zip)",
+                texte:
+                  "Ajoutez chaque référence à la file d'impression (jusqu'à 100), puis « Générer le lot ». Vous obtenez une archive .zip contenant un fichier .nlbl par étiquette (+ LISEZMOI.txt) : chaque fichier s'ouvre directement avec ses données.",
+              },
+              {
+                titre: "Imprimante cible",
+                texte:
+                  "Le fichier est réglé sur « ZDesigner GK420d » par défaut. Pour viser une autre imprimante, ouvrez les préférences (icône engrenage) : le nom saisi sera intégré au .NLBL sans toucher au design.",
+              },
+              {
+                titre: "Ancien flux (.TXT)",
+                texte:
+                  "Le bouton « Exporter le fichier .TXT » conserve le flux historique : format Clé=valeur à charger manuellement via « Charger… » dans Zebra Designer. Utile pour vérifier les données ou reprendre un ancien processus.",
+              },
+            ].map((etape, i) => (
+              <div key={etape.titre} className="flex gap-3">
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-800"
+                  aria-hidden="true"
+                >
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{etape.titre}</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {etape.texte}
+                  </p>
+                </div>
+              </div>
+            ))}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+              <p className="font-semibold">Bon à savoir</p>
+              <ul className="mt-1 list-disc space-y-1 pl-4">
+                <li>
+                  Les accents et caractères spéciaux sont correctement encodés
+                  (UTF-8, échappement XML).
+                </li>
+                <li>
+                  Pour N copies de la même étiquette, un seul fichier suffit :
+                  réglez « Nombre d&apos;étiquettes » dans Zebra Designer.
+                </li>
+                <li>
+                  Un doublon (même modèle + OF) dans la file est signalé avant
+                  génération.
+                </li>
+                <li>
+                  Le journal et les statistiques se rafraîchissent après chaque
+                  génération ; export CSV disponible.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pied de page collant */}
+      <footer className="mt-auto border-t border-zinc-800 bg-zinc-900 pb-[env(safe-area-inset-bottom)] text-zinc-400">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs">
+          <span>Clément Design — Générateur d&apos;étiquettes</span>
+          <span>
+            Fichiers .NLBL à données intégrées · Template cLEMENT2 · Imprimante
+            cible :{" "}
+            <strong className="font-semibold text-zinc-200">
+              {imprimanteCible ?? "ZDesigner GK420d"}
+            </strong>
+            {prefsImprimante.active && prefsImprimante.dpi &&
+              ` · ${prefsImprimante.dpi} dpi`}
+          </span>
+        </div>
+      </footer>
+    </div>
+  );
+}

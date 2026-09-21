@@ -1,0 +1,144 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Référence catalogue : [article, couleur (code), taille, manche, code-barre EAN-13]
+model Article {
+  id        Int    @id @default(autoincrement())
+  article   String
+  couleur   String // code couleur (ex. BLC, NOIR)
+  taille    String
+  manche    String // '' | 'Longues / Long' | 'Courtes / Short' | '3/4 / 3/4'
+  codeBarre String // EAN-13 (13 chiffres)
+
+  @@unique([article, couleur, taille, manche, codeBarre])
+  @@index([article])
+}
+
+// Journal des générations (TXT / NLBL)
+model GenerationLog {
+  id          String   @id @default(cuid())
+  kind        String // 'TXT' | 'NLBL'
+  filename    String
+  labelsCount Int
+  details     String? // résumé JSON du lot
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Étiquette générée par l'application (1 ligne = 1 étiquette, copies comprises)
+// → mémoire permanente des codes FAB (catalogue) et SPE (calculés, préfixe 99)
+// produits par le site, utilisée pour le décodage colisage et les réceptions.
+model LabelRecord {
+  id        String   @id @default(cuid())
+  codeBarre String // EAN-13 (13 chiffres, FAB ou SPE)
+  article   String // modèle de base catalogue, ex. « SFAX »
+  modele    String // modèle complet étiquette, ex. « SFAX MC » / « ADDICT MC SPE »
+  couleur   String // libellé français, ex. « Blanc »
+  couleurCode String // code couleur stock, ex. « BLC » ('' si non résolu)
+  taille    String // taille compacte française, ex. « T46 », « XS »
+  manche    String // libellé français ('' si sans objet)
+  of        String // N° d'OF de la génération ('' si absent)
+  type      String // type produit bilingue
+  source    String // 'FAB' | 'SPE' | 'EXT' (non résolu dans le catalogue)
+  quantite  Int      @default(1) // copies demandées pour cette étiquette
+  filename  String // fichier .nlbl / .zip produit
+  createdAt DateTime @default(now())
+
+  @@index([codeBarre])
+  @@index([of])
+  @@index([createdAt])
+  @@index([filename])
+}
+
+// Réception prévue : ce que le façonnier doit renvoyer (étiquettes imprimées
+// la semaine N → marchandise réceptionnée la semaine N+1).
+model Reception {
+  id        String    @id @default(cuid())
+  titre     String
+  statut    String    @default("ouverte") // 'ouverte' | 'cloturee'
+  note      String?
+  createdAt DateTime  @default(now())
+  clotureAt DateTime?
+  lignes    ReceptionLine[]
+  scans     ScanRecord[]
+
+  @@index([createdAt])
+}
+
+// Ligne attendue d'une réception (regroupement OF → modèle → couleur → taille)
+model ReceptionLine {
+  id          String    @id @default(cuid())
+  receptionId String
+  of          String // N° d'OF ('' si non applicable)
+  modele      String
+  couleur     String // libellé français
+  couleurCode String // code stock ('' si non résolu)
+  taille      String
+  manche      String
+  attendu     Int
+  reception   Reception @relation(fields: [receptionId], references: [id], onDelete: Cascade)
+
+  @@unique([receptionId, of, modele, couleur, taille, manche])
+  @@index([receptionId])
+}
+
+// Code-barres scanné et pointé sur une réception (cumul multi-sessions :
+// chaque pointage incrémente la quantité par code, sans doublon de ligne)
+model ScanRecord {
+  id          String   @id @default(cuid())
+  receptionId String
+  codeBarre   String
+  quantite    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  reception   Reception @relation(fields: [receptionId], references: [id], onDelete: Cascade)
+
+  @@unique([receptionId, codeBarre])
+  @@index([receptionId])
+}
+
+// Configuration de la connexion cloud (Supabase) — ligne unique (singleton = 1).
+// La clé service_role est stockée côté serveur uniquement et n'est JAMAIS
+// renvoyée en clair au navigateur (aperçu masqué « ••••xxxx »).
+model CloudConfig {
+  id                Int       @id @default(autoincrement())
+  singleton         Int       @unique @default(1)
+  supabaseUrl       String? // https://xxxxx.supabase.co
+  supabaseCle       String? // clé service_role (usage serveur uniquement)
+  siteId            String    @default("france-hq") // france-hq | tn-fac1 | tn-fac2 | personnalisé
+  siteLabel         String    @default("France — Clément Design")
+  dernierTestOk     Boolean?
+  dernierTestAt     DateTime?
+  dernierTestErreur String?
+  derniereSyncAt    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+// File d'attente des événements à pousser vers Supabase (mode miroir).
+// Chaque événement (étiquette générée, impression, réception, scan) est
+// empilé AVANT la tentative réseau : si Supabase est hors ligne (ou pas
+// encore configuré), rien n'est perdu — la file est vidée automatiquement
+// dès que la connexion redevient disponible. Idempotence garantie par le
+// couple (site_id, local_id) côté cloud.
+model CloudSyncQueue {
+  id      Int       @id @default(autoincrement())
+  table   String // table cible : label_generations | print_events | receptions | reception_lines | scan_records
+  payload String // JSON d'une ligne (noms de colonnes = schéma Supabase)
+  statut  String    @default("en_attente") // en_attente | synchronise | erreur
+  erreur  String?
+  creeAt  DateTime  @default(now())
+  syncAt  DateTime?
+
+  @@index([statut, id])
+}
