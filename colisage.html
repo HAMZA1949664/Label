@@ -40,7 +40,7 @@
     justify-content:center;
     margin-bottom:12px;
   }
-  .logo{max-width:340px;height:auto;}
+  .logo{max-width:420px;width:100%;height:auto;}
   h1.page-title{
     font-family:'Fraunces',serif;
     font-weight:500;
@@ -646,7 +646,7 @@ buildBtn.addEventListener('click', async () => {
 
   lastRows = rows;
   lastUnknown = [...unknownCounts.entries()];
-  resultsSection.style.display = '';
+  resultsSection.style.display = 'block';
   statusEl.textContent = '';
 
   // Enregistrement dans Supabase (n'empêche pas l'affichage si ça échoue)
