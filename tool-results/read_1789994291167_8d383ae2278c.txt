@@ -1,0 +1,562 @@
+  1204→                              className="flex items-center rounded-md border bg-white"
+  1205→                              role="group"
+  1206→                              aria-label={`Quantité de copies pour ${item.ref}`}
+  1207→                            >
+  1208→                              <button
+  1209→                                type="button"
+  1210→                                aria-label="Retirer une copie"
+  1211→                                disabled={item.quantite <= 1}
+  1212→                                onClick={() => changerQuantite(item.id, -1)}
+  1213→                                className="flex h-7 w-7 items-center justify-center rounded-l-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-30"
+  1214→                              >
+  1215→                                <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+  1216→                              </button>
+  1217→                              <span
+  1218→                                className={`w-9 text-center font-mono text-xs tabular-nums ${
+  1219→                                  item.quantite > 1
+  1220→                                    ? "font-semibold text-amber-700"
+  1221→                                    : "text-zinc-600"
+  1222→                                }`}
+  1223→                              >
+  1224→                                ×{item.quantite}
+  1225→                              </span>
+  1226→                              <button
+  1227→                                type="button"
+  1228→                                aria-label="Ajouter une copie"
+  1229→                                disabled={item.quantite >= 99}
+  1230→                                onClick={() => changerQuantite(item.id, +1)}
+  1231→                                className="flex h-7 w-7 items-center justify-center rounded-r-md text-zinc-500 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-30"
+  1232→                              >
+  1233→                                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+  1234→                              </button>
+  1235→                            </div>
+  1236→                            <button
+  1237→                              type="button"
+  1238→                              aria-label={`Retirer ${item.ref}`}
+  1239→                              className="rounded p-1 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+  1240→                              onClick={() =>
+  1241→                                setFileAttente((q) => q.filter((x) => x.id !== item.id))
+  1242→                              }
+  1243→                            >
+  1244→                              <X className="h-4 w-4" aria-hidden="true" />
+  1245→                            </button>
+  1246→                          </span>
+  1247→                        </li>
+  1248→                      ))}
+  1249→                    </ul>
+  1250→                  </div>
+  1251→                )}
+  1252→              </CardContent>
+  1253→              <CardFooter className="border-t bg-zinc-50/60 p-4">
+  1254→                <Button
+  1255→                  onClick={genererLot}
+  1256→                  disabled={fileAttente.length === 0 || lotEnCours}
+  1257→                  className="h-11 w-full whitespace-normal bg-amber-600 text-left text-white hover:bg-amber-700 sm:w-auto"
+  1258→                >
+  1259→                  {lotEnCours ? (
+  1260→                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+  1261→                  ) : (
+  1262→                    <FileArchive className="mr-2 h-4 w-4" aria-hidden="true" />
+  1263→                  )}
+  1264→                  {lotEnCours
+  1265→                    ? "Génération du lot…"
+  1266→                    : fileAttente.length === 1
+  1267→                      ? `Générer le lot — 1 fichier .NLBL${totalCopiesFile > 1 ? ` (×${totalCopiesFile} copies)` : ""}`
+  1268→                      : `Générer le lot — archive .zip de ${fileAttente.length} fichiers (${totalCopiesFile} copies)`}
+  1269→                </Button>
+  1270→              </CardFooter>
+  1271→            </Card>
+  1272→            </CarteAnimee>
+  1273→          </div>
+  1274→
+  1275→          {/* ------------------------- Colonne droite ------------------------- */}
+  1276→          <div className="min-w-0 space-y-6 lg:col-span-5">
+  1277→            {/* Aperçu */}
+  1278→            <CarteAnimee delai={0.16}>
+  1279→            <Card>
+  1280→              <CardHeader className="pb-4">
+  1281→                <CardTitle className="flex items-center justify-between gap-2 text-base">
+  1282→                  <span>Aperçu de l&apos;étiquette</span>
+  1283→                  <Tooltip>
+  1284→                    <TooltipTrigger asChild>
+  1285→                      <Button
+  1286→                        variant="ghost"
+  1287→                        size="icon"
+  1288→                        aria-label="Agrandir l'aperçu de l'étiquette"
+  1289→                        disabled={!etiquette}
+  1290→                        onClick={() => setApercuGrand(true)}
+  1291→                        className="h-8 w-8 text-zinc-500 hover:text-amber-700"
+  1292→                      >
+  1293→                        <Maximize2 className="h-4 w-4" aria-hidden="true" />
+  1294→                      </Button>
+  1295→                    </TooltipTrigger>
+  1296→                    <TooltipContent>
+  1297→                      <p>Agrandir l&apos;aperçu (vérification avant impression)</p>
+  1298→                    </TooltipContent>
+  1299→                  </Tooltip>
+  1300→                </CardTitle>
+  1301→                <CardDescription>
+  1302→                  Format 55 × 35 mm — rendu identique au modèle cLEMENT2.
+  1303→                </CardDescription>
+  1304→              </CardHeader>
+  1305→              <CardContent className="space-y-4">
+  1306→                {/* Zone de découpe (repère de couteau autour de l'étiquette) */}
+  1307→                <div className="relative mx-auto w-full max-w-md">
+  1308→                  <div
+  1309→                    className="pointer-events-none absolute -inset-2.5 rounded-xl border border-dashed border-zinc-300"
+  1310→                    aria-hidden="true"
+  1311→                  >
+  1312→                    <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-[10px] font-medium uppercase tracking-widest text-zinc-400">
+  1313→                      Découpe 55 × 35 mm
+  1314→                    </span>
+  1315→                  </div>
+  1316→                <div
+  1317→                  className={`relative mx-auto w-full rounded-lg border-2 bg-white p-4 shadow-md transition-all sm:p-6 ${
+  1318→                    peutGenerer
+  1319→                      ? "border-green-600 ring-2 ring-green-600/20"
+  1320→                      : "border-zinc-300"
+  1321→                  }`}
+  1322→                  aria-label="Aperçu de l'étiquette"
+  1323→                >
+  1324→                  {etiquette ? (
+  1325→                    <div className="space-y-1 text-black">
+  1326→                      <p className="truncate text-center text-2xl font-extrabold tracking-wide sm:text-3xl">
+  1327→                        {etiquette.modele}
+  1328→                      </p>
+  1329→                      <div className="flex items-baseline justify-between text-lg font-bold sm:text-xl">
+  1330→                        <span className="truncate">{etiquette.couleur}</span>
+  1331→                        <span>{etiquette.taille}</span>
+  1332→                      </div>
+  1333→                      <div className="my-2 border-t-2 border-black" aria-hidden="true" />
+  1334→                      <p className="text-center text-base font-bold sm:text-lg">
+  1335→                        {etiquette.type}
+  1336→                      </p>
+  1337→                      {etiquette.manche && (
+  1338→                        <p className="text-center text-sm font-semibold sm:text-base">
+  1339→                          {etiquette.manche}
+  1340→                        </p>
+  1341→                      )}
+  1342→                      <div className="mt-3 flex justify-center">
+  1343→                        <Ean13Svg code={etiquette.codeBarre} />
+  1344→                      </div>
+  1345→                      <p className="mt-1 text-center text-lg font-extrabold sm:text-xl">
+  1346→                        OF: {etiquette.of || "——"}
+  1347→                      </p>
+  1348→                    </div>
+  1349→                  ) : (
+  1350→                    <div className="flex h-48 items-center justify-center rounded text-sm text-zinc-400">
+  1351→                      Sélectionnez une référence pour prévisualiser l&apos;étiquette.
+  1352→                    </div>
+  1353→                  )}
+  1354→                </div>
+  1355→                </div>
+  1356→
+  1357→                {/* Table des variables (miroir de Zebra Designer) */}
+  1358→                {etiquette && (
+  1359→                  <div className="space-y-1.5">
+  1360→                    <div className="flex items-center justify-between gap-2">
+  1361→                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+  1362→                        Variables intégrées au fichier
+  1363→                      </p>
+  1364→                      <div className="flex items-center gap-0.5">
+  1365→                        <Tooltip>
+  1366→                          <TooltipTrigger asChild>
+  1367→                            <Button
+  1368→                              variant="ghost"
+  1369→                              size="sm"
+  1370→                              onClick={chargerApercuFichier}
+  1371→                              disabled={apercuFichierEnCours}
+  1372→                              className="h-7 px-2 text-xs text-zinc-500 hover:text-amber-700"
+  1373→                              aria-label="Afficher le contenu exact du fichier .NLBL"
+  1374→                            >
+  1375→                              {apercuFichierEnCours ? (
+  1376→                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+  1377→                              ) : (
+  1378→                                <FileSearch className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+  1379→                              )}
+  1380→                              Contenu
+  1381→                            </Button>
+  1382→                          </TooltipTrigger>
+  1383→                          <TooltipContent>
+  1384→                            <p>Vérifier le contenu exact du fichier (XML, entrées, imprimante)</p>
+  1385→                          </TooltipContent>
+  1386→                        </Tooltip>
+  1387→                        <Button
+  1388→                          variant="ghost"
+  1389→                          size="sm"
+  1390→                          onClick={copierValeurs}
+  1391→                          className="h-7 px-2 text-xs text-zinc-500 hover:text-amber-700"
+  1392→                          aria-label="Copier les 7 variables dans le presse-papiers"
+  1393→                        >
+  1394→                          {valeursCopiees ? (
+  1395→                            <Check className="mr-1 h-3.5 w-3.5 text-green-600" aria-hidden="true" />
+  1396→                          ) : (
+  1397→                            <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+  1398→                          )}
+  1399→                          {valeursCopiees ? "Copié" : "Copier"}
+  1400→                        </Button>
+  1401→                      </div>
+  1402→                    </div>
+  1403→                  <div className="overflow-x-auto rounded-lg border">
+  1404→                    <table className="w-full text-sm">
+  1405→                      <caption className="sr-only">
+  1406→                        Variables qui seront intégrées au fichier .NLBL
+  1407→                      </caption>
+  1408→                      <tbody className="divide-y">
+  1409→                        {(
+  1410→                          [
+  1411→                            ["Modele", etiquette.modele],
+  1412→                            ["Manche", etiquette.manche || "—"],
+  1413→                            ["Taille", etiquette.taille],
+  1414→                            ["OF", etiquette.of || "—"],
+  1415→                            ["Couleur", etiquette.couleur],
+  1416→                            ["Type", etiquette.type],
+  1417→                            ["CodeBarre", etiquette.codeBarre],
+  1418→                          ] as const
+  1419→                        ).map(([invite, valeur]) => (
+  1420→                          <tr key={invite} className="hover:bg-zinc-50">
+  1421→                            <th
+  1422→                              scope="row"
+  1423→                              className="w-24 bg-zinc-50 px-3 py-1.5 text-left font-medium text-zinc-600"
+  1424→                            >
+  1425→                              {invite}
+  1426→                            </th>
+  1427→                            <td className="px-3 py-1.5 font-mono text-xs">
+  1428→                              {valeur}
+  1429→                            </td>
+  1430→                          </tr>
+  1431→                        ))}
+  1432→                      </tbody>
+  1433→                    </table>
+  1434→                  </div>
+  1435→                  </div>
+  1436→                )}
+  1437→              </CardContent>
+  1438→              <CardFooter className="flex flex-col gap-3 border-t bg-zinc-50/60 p-4">
+  1439→                <Button
+  1440→                  onClick={() =>
+  1441→                    etiquette && genererNlbl([etiquette], setGenerationEnCours)
+  1442→                  }
+  1443→                  disabled={!peutGenerer || generationEnCours}
+  1444→                  className="h-12 w-full bg-amber-600 text-base font-semibold text-white hover:bg-amber-700"
+  1445→                >
+  1446→                  {generationEnCours ? (
+  1447→                    <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+  1448→                  ) : (
+  1449→                    <FileDown className="mr-2 h-5 w-5" aria-hidden="true" />
+  1450→                  )}
+  1451→                  {generationEnCours
+  1452→                    ? "Génération en cours…"
+  1453→                    : "Générer le fichier .NLBL"}
+  1454→                </Button>
+  1455→                <p className="text-center text-xs text-muted-foreground">
+  1456→                  Les données sont intégrées au fichier : ouvrez-le dans Zebra
+  1457→                  Designer et imprimez directement — aucune importation de fichier
+  1458→                  texte. Astuce : raccourci clavier{" "}
+  1459→                  <kbd className="rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 shadow-sm">
+  1460→                    Ctrl + ⏎
+  1461→                  </kbd>
+  1462→                </p>
+  1463→                <Separator />
+  1464→                <Button
+  1465→                  variant="outline"
+  1466→                  onClick={exporterTxt}
+  1467→                  disabled={!peutGenerer}
+  1468→                  className="h-11 w-full whitespace-normal"
+  1469→                >
+  1470→                  <FileDown className="mr-2 h-4 w-4" aria-hidden="true" />
+  1471→                  Exporter le fichier .TXT (historique)
+  1472→                </Button>
+  1473→              </CardFooter>
+  1474→            </Card>
+  1475→            </CarteAnimee>
+  1476→
+  1477→            {/* Historique */}
+  1478→            <CarteAnimee delai={0.24}>
+  1479→            <Card>
+  1480→              <CardHeader className="pb-3">
+  1481→                <CardTitle className="flex items-center justify-between text-base">
+  1482→                  <span className="flex items-center gap-2">
+  1483→                    <History className="h-4 w-4 text-amber-600" aria-hidden="true" />
+  1484→                    Dernières générations
+  1485→                  </span>
+  1486→                  <Tooltip>
+  1487→                    <TooltipTrigger asChild>
+  1488→                      <Button
+  1489→                        variant="ghost"
+  1490→                        size="icon"
+  1491→                        aria-label="Rafraîchir l'historique"
+  1492→                        onClick={() => chargerHistorique()}
+  1493→                        className="h-8 w-8"
+  1494→                      >
+  1495→                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+  1496→                      </Button>
+  1497→                    </TooltipTrigger>
+  1498→                    <TooltipContent>
+  1499→                      <p>Rafraîchir l&apos;historique</p>
+  1500→                    </TooltipContent>
+  1501→                  </Tooltip>
+  1502→                </CardTitle>
+  1503→              </CardHeader>
+  1504→              <CardContent className="space-y-3">
+  1505→                {/* Filtre par type + recherche locale (fichier, modèle, OF) + export CSV */}
+  1506→                <div className="flex flex-wrap items-center gap-1.5">
+  1507→                  {([
+  1508→                    ["TOUS", "Tous"],
+  1509→                    ["NLBL", ".nlbl"],
+  1510→                    ["TXT", ".txt"],
+  1511→                  ] as const).map(([valeur, libelle]) => {
+  1512→                    const effectif =
+  1513→                      valeur === "TOUS"
+  1514→                        ? historique.length
+  1515→                        : historique.filter((h) => h.kind === valeur).length;
+  1516→                    return (
+  1517→                      <button
+  1518→                        key={valeur}
+  1519→                        type="button"
+  1520→                        onClick={() => setFiltreTypeHisto(valeur)}
+  1521→                        aria-pressed={filtreTypeHisto === valeur}
+  1522→                        className={`rounded-full border px-2.5 py-0.5 text-xs tabular-nums transition-colors ${
+  1523→                          filtreTypeHisto === valeur
+  1524→                            ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
+  1525→                            : "border-zinc-200 bg-white text-zinc-600 hover:border-amber-400 hover:bg-amber-50"
+  1526→                        }`}
+  1527→                      >
+  1528→                        {libelle} ({effectif})
+  1529→                      </button>
+  1530→                    );
+  1531→                  })}
+  1532→                </div>
+  1533→                <div className="flex gap-2">
+  1534→                  <div className="relative min-w-0 flex-1">
+  1535→                    <Search
+  1536→                      className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+  1537→                      aria-hidden="true"
+  1538→                    />
+  1539→                    <Input
+  1540→                      value={rechercheHisto}
+  1541→                      onChange={(e) => setRechercheHisto(e.target.value)}
+  1542→                      placeholder="Filtrer par fichier, modèle ou OF…"
+  1543→                      className="h-9 pl-8 text-sm"
+  1544→                      aria-label="Filtrer le journal des générations"
+  1545→                    />
+  1546→                  </div>
+  1547→                  <Tooltip>
+  1548→                    <TooltipTrigger asChild>
+  1549→                      <Button
+  1550→                        variant="outline"
+  1551→                        size="sm"
+  1552→                        onClick={exporterCsv}
+  1553→                        disabled={csvEnCours}
+  1554→                        className="h-9 shrink-0"
+  1555→                      >
+  1556→                        {csvEnCours ? (
+  1557→                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+  1558→                        ) : (
+  1559→                          <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+  1560→                        )}
+  1561→                        CSV
+  1562→                      </Button>
+  1563→                    </TooltipTrigger>
+  1564→                    <TooltipContent>
+  1565→                      <p>Exporter tout le journal au format CSV (Excel)</p>
+  1566→                    </TooltipContent>
+  1567→                  </Tooltip>
+  1568→                </div>
+  1569→
+  1570→                {historique.length === 0 ? (
+  1571→                  <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+  1572→                    <History className="h-6 w-6 text-zinc-300" aria-hidden="true" />
+  1573→                    <p className="text-sm text-muted-foreground">
+  1574→                      Aucune génération enregistrée pour le moment.
+  1575→                    </p>
+  1576→                  </div>
+  1577→                ) : historiqueFiltre.length === 0 ? (
+  1578→                  <p className="py-4 text-center text-sm text-muted-foreground">
+  1579→                    Aucun fichier ne correspond à « {rechercheHisto} ».
+  1580→                  </p>
+  1581→                ) : (
+  1582→                  <>
+  1583→                    <div className="max-h-96 overflow-y-auto rounded-lg border">
+  1584→                      <ul className="divide-y">
+  1585→                        {historiqueFiltre.map((h) => (
+  1586→                        <li
+  1587→                          key={h.id}
+  1588→                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm transition-colors hover:bg-zinc-50"
+  1589→                        >
+  1590→                          <span className="flex min-w-0 items-center gap-2">
+  1591→                            <Badge
+  1592→                              className={
+  1593→                                h.kind === "NLBL"
+  1594→                                  ? "shrink-0 bg-amber-600 text-white hover:bg-amber-600"
+  1595→                                  : "shrink-0 bg-zinc-200 text-zinc-700 hover:bg-zinc-200"
+  1596→                              }
+  1597→                            >
+  1598→                              {h.kind}
+  1599→                            </Badge>
+  1600→                            {h.labelsCount > 1 && (
+  1601→                              <Badge
+  1602→                                variant="outline"
+  1603→                                className="shrink-0 border-amber-300 bg-amber-50 font-mono text-[10px] text-amber-800"
+  1604→                              >
+  1605→                                ×{h.labelsCount}
+  1606→                              </Badge>
+  1607→                            )}
+  1608→                            <span className="flex min-w-0 flex-col">
+  1609→                              <span className="truncate font-mono text-xs" title={h.filename}>
+  1610→                                {h.filename}
+  1611→                              </span>
+  1612→                              {(h.modele || h.of) && (
+  1613→                                <span className="truncate text-[11px] text-muted-foreground">
+  1614→                                  {[h.modele, h.of ? `OF ${h.of}` : null]
+  1615→                                    .filter(Boolean)
+  1616→                                    .join(" · ")}
+  1617→                                </span>
+  1618→                              )}
+  1619→                            </span>
+  1620→                          </span>
+  1621→                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+  1622→                            {new Date(h.createdAt).toLocaleString("fr-FR", {
+  1623→                              day: "2-digit",
+  1624→                              month: "2-digit",
+  1625→                              hour: "2-digit",
+  1626→                              minute: "2-digit",
+  1627→                            })}
+  1628→                          </span>
+  1629→                        </li>
+  1630→                      ))}
+  1631→                      </ul>
+  1632→                    </div>
+  1633→                    {/* Pagination : charge les entrées plus anciennes par pages de 20 */}
+  1634→                    <div className="flex flex-col items-center gap-2 border-t pt-3">
+  1635→                      <p className="text-[11px] tabular-nums text-muted-foreground">
+  1636→                        {historique.length} entrée{historique.length > 1 ? "s" : ""} affichée
+  1637→                        {historique.length > 1 ? "s" : ""} sur{" "}
+  1638→                        {historiqueTotal.toLocaleString("fr-FR")}
+  1639→                        {rechercheHisto
+  1640→                          ? " — la recherche porte sur les entrées chargées"
+  1641→                          : ""}
+  1642→                      </p>
+  1643→                      {historiqueEncore && (
+  1644→                        <Button
+  1645→                          variant="outline"
+  1646→                          size="sm"
+  1647→                          onClick={chargerPlusHistorique}
+  1648→                          disabled={chargerPlusEnCours}
+  1649→                          className="h-8"
+  1650→                        >
+  1651→                          {chargerPlusEnCours ? (
+  1652→                            <Loader2
+  1653→                              className="mr-2 h-3.5 w-3.5 animate-spin"
+  1654→                              aria-hidden="true"
+  1655→                            />
+  1656→                          ) : (
+  1657→                            <ChevronDown
+  1658→                              className="mr-2 h-3.5 w-3.5"
+  1659→                              aria-hidden="true"
+  1660→                            />
+  1661→                          )}
+  1662→                          Charger plus (20 suivantes)
+  1663→                        </Button>
+  1664→                      )}
+  1665→                    </div>
+  1666→                  </>
+  1667→                )}
+  1668→              </CardContent>
+  1669→            </Card>
+  1670→            </CarteAnimee>
+  1671→          </div>
+  1672→
+  1673→          {/* ------------------------- Statistiques (pleine largeur) ------------------------- */}
+  1674→          <div className="min-w-0 lg:col-span-12">
+  1675→            <CarteAnimee delai={0.32}>
+  1676→            <Card>
+  1677→              <CardHeader className="pb-4">
+  1678→                <CardTitle className="flex items-center justify-between gap-2 text-base">
+  1679→                  <span className="flex items-center gap-2">
+  1680→                    <BarChart3 className="h-4 w-4 text-amber-600" aria-hidden="true" />
+  1681→                    Activité ({stats?.jours ?? 7} derniers jours)
+  1682→                  </span>
+  1683→                  <span className="flex items-center gap-1">
+  1684→                    {/* Période de la répartition quotidienne */}
+  1685→                    <Select
+  1686→                      value={periodeStats}
+  1687→                      onValueChange={(v) => {
+  1688→                        setPeriodeStats(v);
+  1689→                        chargerStats(Number(v));
+  1690→                      }}
+  1691→                    >
+  1692→                      <SelectTrigger
+  1693→                        className="h-8 w-[152px] text-xs"
+  1694→                        aria-label="Période des statistiques"
+  1695→                      >
+  1696→                        <SelectValue />
+  1697→                      </SelectTrigger>
+  1698→                      <SelectContent>
+  1699→                        <SelectItem value="7">7 derniers jours</SelectItem>
+  1700→                        <SelectItem value="14">14 derniers jours</SelectItem>
+  1701→                        <SelectItem value="30">30 derniers jours</SelectItem>
+  1702→                      </SelectContent>
+  1703→                    </Select>
+  1704→                    <Tooltip>
+  1705→                      <TooltipTrigger asChild>
+  1706→                        <Button
+  1707→                          variant="ghost"
+  1708→                          size="icon"
+  1709→                          aria-label="Rafraîchir les statistiques"
+  1710→                          onClick={() => chargerStats(Number(periodeStats))}
+  1711→                          className="h-8 w-8"
+  1712→                        >
+  1713→                          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+  1714→                        </Button>
+  1715→                      </TooltipTrigger>
+  1716→                      <TooltipContent>
+  1717→                        <p>Rafraîchir les statistiques</p>
+  1718→                      </TooltipContent>
+  1719→                    </Tooltip>
+  1720→                  </span>
+  1721→                </CardTitle>
+  1722→                <CardDescription>
+  1723→                  Cumuls totaux et répartition quotidienne des fichiers générés
+  1724→                  (fuseau Europe/Paris) — période ajustable.
+  1725→                </CardDescription>
+  1726→              </CardHeader>
+  1727→              <CardContent className="grid gap-6 md:grid-cols-3">
+  1728→                {/* Indicateurs clés (totaux cumulés + moyenne sur 7 jours) */}
+  1729→                <div className="grid grid-cols-2 gap-3">
+  1730→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-sm">
+  1731→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+  1732→                      <FileDown className="h-4 w-4" aria-hidden="true" />
+  1733→                    </div>
+  1734→                    <div>
+  1735→                      <p className="text-xl font-bold leading-none tabular-nums">
+  1736→                        {(stats?.totalNlbl ?? 0).toLocaleString("fr-FR")}
+  1737→                      </p>
+  1738→                      <p className="mt-1 text-xs text-muted-foreground">fichiers .NLBL générés</p>
+  1739→                    </div>
+  1740→                  </div>
+  1741→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-sm">
+  1742→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+  1743→                      <FileText className="h-4 w-4" aria-hidden="true" />
+  1744→                    </div>
+  1745→                    <div>
+  1746→                      <p className="text-xl font-bold leading-none tabular-nums">
+  1747→                        {(stats?.totalTxt ?? 0).toLocaleString("fr-FR")}
+  1748→                      </p>
+  1749→                      <p className="mt-1 text-xs text-muted-foreground">fichiers .TXT exportés</p>
+  1750→                    </div>
+  1751→                  </div>
+  1752→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-green-300 hover:shadow-sm">
+  1753→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-green-100 text-green-700">
+  1754→                      <Tags className="h-4 w-4" aria-hidden="true" />
+  1755→                    </div>
+  1756→                    <div>
+  1757→                      <p className="text-xl font-bold leading-none tabular-nums">
+  1758→                        {(stats?.totalEtiquettes ?? 0).toLocaleString("fr-FR")}
+  1759→                      </p>
+  1760→                      <p className="mt-1 text-xs text-muted-foreground">étiquettes prêtes à imprimer</p>
+  1761→                    </div>
+  1762→                  </div>
+  1763→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-sm">
+
+[showing lines 1204-1763 of 2165; use offset=1764 with limit to continue reading]

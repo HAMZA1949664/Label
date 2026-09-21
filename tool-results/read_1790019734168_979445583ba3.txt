@@ -1,0 +1,1041 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * Panneau « Cloud » — connexion Supabase multi-sites (Clément Design).
+     5→ *
+     6→ * Un seul bouton dans l'en-tête ouvre ce panneau autonome :
+     7→ *  - onglet Connexion : site de travail (France / façonniers Tunisie) + URL et
+     8→ *    clé service_role du projet Supabase, test, synchronisation manuelle ;
+     9→ *  - onglet Journal des sites : activité de TOUS les sites lue dans la base
+    10→ *    partagée (socle du flux W-1 : impression semaine N → réception N+1) ;
+    11→ *  - onglet Guide : mise en route Supabase en 5 étapes avec copie du script.
+    12→ *
+    13→ * Le composant gère son propre état (poll 30 s du statut) : il ne touche à
+    14→ * rien d'autre dans la page — zéro régression sur les flux existants.
+    15→ */
+    16→
+    17→import { useCallback, useEffect, useState } from "react";
+    18→import {
+    19→  ArrowDown,
+    20→  Building2,
+    21→  CheckCircle2,
+    22→  CloudOff,
+    23→  CloudUpload,
+    24→  Copy,
+    25→  Database,
+    26→  Eye,
+    27→  EyeOff,
+    28→  ExternalLink,
+    29→  Factory,
+    30→  FileText,
+    31→  Loader2,
+    32→  Printer,
+    33→  RefreshCw,
+    34→  XCircle,
+    35→} from "lucide-react";
+    36→import { Badge } from "@/components/ui/badge";
+    37→import { Button } from "@/components/ui/button";
+    38→import {
+    39→  Dialog,
+    40→  DialogContent,
+    41→  DialogDescription,
+    42→  DialogHeader,
+    43→  DialogTitle,
+    44→  DialogTrigger,
+    45→} from "@/components/ui/dialog";
+    46→import { Input } from "@/components/ui/input";
+    47→import { Label } from "@/components/ui/label";
+    48→import {
+    49→  Select,
+    50→  SelectContent,
+    51→  SelectItem,
+    52→  SelectTrigger,
+    53→  SelectValue,
+    54→} from "@/components/ui/select";
+    55→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    56→import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+    57→import { useToast } from "@/hooks/use-toast";
+    58→
+    59→// ---------------------------------------------------------------------------
+    60→// Types (miroir des réponses /api/cloud)
+    61→// ---------------------------------------------------------------------------
+    62→
+    63→interface StatutCloud {
+    64→  configure: boolean;
+    65→  source: "base" | "env" | "aucune";
+    66→  url: string | null;
+    67→  cleApercu: string | null;
+    68→  site: { id: string; label: string };
+    69→  dernierTest: { ok: boolean | null; at: string | null; erreur: string | null };
+    70→  derniereSyncAt: string | null;
+    71→  file: { enAttente: number; synchronisees: number; enErreur: number };
+    72→}
+    73→
+    74→interface EtiquetteCloud {
+    75→  siteId: string;
+    76→  siteLabel: string;
+    77→  modele: string;
+    78→  couleur: string;
+    79→  taille: string;
+    80→  of: string;
+    81→  quantite: number;
+    82→  source: string;
+    83→  genereAt: string;
+    84→}
+    85→
+    86→interface ImpressionCloud {
+    87→  siteId: string;
+    88→  siteLabel: string;
+    89→  kind: string;
+    90→  filename: string;
+    91→  labelsCount: number;
+    92→  eventAt: string;
+    93→}
+    94→
+    95→interface JournalCloud {
+    96→  periode: { id: string; libelle: string; debut: string | null; fin: string | null };
+    97→  totaux: { etiquettes: number; pieces: number; impressions: number; sitesActifs: number };
+    98→  parSite: Array<{ siteId: string; siteLabel: string; etiquettes: number; pieces: number; impressions: number }>;
+    99→  etiquettes: EtiquetteCloud[];
+   100→  impressions: ImpressionCloud[];
+   101→}
+   102→
+   103→/** Sites prédéfinis (l'identifiant technique est libre via « Autre site… »). */
+   104→const SITES_PREDEFINIS = [
+   105→  { id: "france-hq", label: "France — Clément Design" },
+   106→  { id: "tn-fac1", label: "Tunisie — Façonnier 1" },
+   107→  { id: "tn-fac2", label: "Tunisie — Façonnier 2" },
+   108→] as const;
+   109→
+   110→const PERIODES_JOURNAL = [
+   111→  { id: "7j", label: "7 derniers jours" },
+   112→  { id: "courante", label: "Semaine en cours" },
+   113→  { id: "precedente", label: "Semaine précédente" },
+   114→  { id: "tout", label: "Tout l'historique" },
+   115→] as const;
+   116→
+   117→// ---------------------------------------------------------------------------
+   118→// Helpers d'affichage
+   119→// ---------------------------------------------------------------------------
+   120→
+   121→/** « il y a 3 min » … */
+   122→function relatif(iso: string | null): string {
+   123→  if (!iso) return "—";
+   124→  const t = new Date(iso).getTime();
+   125→  if (Number.isNaN(t)) return "—";
+   126→  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+   127→  if (s < 45) return "à l'instant";
+   128→  const m = Math.round(s / 60);
+   129→  if (m < 60) return `il y a ${m} min`;
+   130→  const h = Math.round(m / 60);
+   131→  if (h < 24) return `il y a ${h} h`;
+   132→  const j = Math.round(h / 24);
+   133→  return `il y a ${j} j`;
+   134→}
+   135→
+   136→/** Date + heure locale (fr-FR). */
+   137→function horodatage(iso: string | null): string {
+   138→  if (!iso) return "—";
+   139→  const d = new Date(iso);
+   140→  if (Number.isNaN(d.getTime())) return "—";
+   141→  return d.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+   142→}
+   143→
+   144→/** Couleur du point d'état du bouton d'en-tête. */
+   145→function couleurPoint(statut: StatutCloud | null): string {
+   146→  if (!statut || !statut.configure) return "bg-amber-400";
+   147→  if (statut.dernierTest.ok === false) return "bg-red-400";
+   148→  return "bg-emerald-400";
+   149→}
+   150→
+   151→// ---------------------------------------------------------------------------
+   152→// Composant
+   153→// ---------------------------------------------------------------------------
+   154→
+   155→export function CloudPanel() {
+   156→  const { toast } = useToast();
+   157→  const [statut, setStatut] = useState<StatutCloud | null>(null);
+   158→  const [ouvert, setOuvert] = useState(false);
+   159→  const [onglet, setOnglet] = useState("connexion");
+   160→
+   161→  // Formulaire de connexion
+   162→  const [url, setUrl] = useState("");
+   163→  const [cle, setCle] = useState("");
+   164→  const [voirCle, setVoirCle] = useState(false);
+   165→  const [testEnCours, setTestEnCours] = useState(false);
+   166→  const [saveEnCours, setSaveEnCours] = useState(false);
+   167→  const [syncEnCours, setSyncEnCours] = useState(false);
+   168→
+   169→  // Site de travail
+   170→  const [siteChoisi, setSiteChoisi] = useState<string>("france-hq");
+   171→  const [siteIdPerso, setSiteIdPerso] = useState("");
+   172→  const [siteLabelPerso, setSiteLabelPerso] = useState("");
+   173→  const [siteEnCours, setSiteEnCours] = useState(false);
+   174→
+   175→  // Journal des sites
+   176→  const [journal, setJournal] = useState<JournalCloud | null>(null);
+   177→  const [journalChargement, setJournalChargement] = useState(false);
+   178→  const [filtreSite, setFiltreSite] = useState("tous");
+   179→  const [filtrePeriode, setFiltrePeriode] = useState("7j");
+   180→  const [copieSql, setCopieSql] = useState(false);
+   181→
+   182→  /** Statut (silencieux pour le poll, verbeux à l'ouverture). */
+   183→  const chargerStatut = useCallback(async (silencieux: boolean) => {
+   184→    try {
+   185→      const res = await fetch("/api/cloud", { cache: "no-store" });
+   186→      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+   187→      const data = (await res.json()) as StatutCloud;
+   188→      setStatut(data);
+   189→      if (!silencieux) {
+   190→        setSiteChoisi(
+   191→          SITES_PREDEFINIS.some((s) => s.id === data.site.id) ? data.site.id : "autre"
+   192→        );
+   193→        setSiteIdPerso(SITES_PREDEFINIS.some((s) => s.id === data.site.id) ? "" : data.site.id);
+   194→        setSiteLabelPerso(SITES_PREDEFINIS.some((s) => s.id === data.site.id) ? "" : data.site.label);
+   195→        setUrl(data.url ?? "");
+   196→      }
+   197→    } catch {
+   198→      if (!silencieux)
+   199→        toast({
+   200→          variant: "destructive",
+   201→          title: "Impossible de lire l'état de la connexion cloud.",
+   202→        });
+   203→    }
+   204→  }, []);
+   205→
+   206→  /** Journal multi-sites (lire la base partagée). */
+   207→  const chargerJournal = useCallback(async () => {
+   208→    setJournalChargement(true);
+   209→    try {
+   210→      const res = await fetch(
+   211→        `/api/cloud/journal?site=${encodeURIComponent(filtreSite)}&periode=${encodeURIComponent(filtrePeriode)}`,
+   212→        { cache: "no-store" }
+   213→      );
+   214→      const data = await res.json();
+   215→      if (!res.ok) {
+   216→        setJournal(null);
+   217→        if ((data as { code?: string }).code !== "non_configure") {
+   218→          toast({
+   219→            variant: "destructive",
+   220→            title:
+   221→              (data as { error?: string }).error ?? "Lecture du journal impossible.",
+   222→          });
+   223→        }
+   224→        return;
+   225→      }
+   226→      setJournal(data as JournalCloud);
+   227→    } catch {
+   228→      setJournal(null);
+   229→      toast({
+   230→        variant: "destructive",
+   231→        title: "Lecture du journal cloud impossible (réseau).",
+   232→      });
+   233→    } finally {
+   234→      setJournalChargement(false);
+   235→    }
+   236→  }, [filtreSite, filtrePeriode]);
+   237→
+   238→  // Poll du statut (boucle de reprise : le GET relance aussi le vidage file)
+   239→  useEffect(() => {
+   240→    void chargerStatut(true);
+   241→    const id = setInterval(() => void chargerStatut(true), 30_000);
+   242→    return () => clearInterval(id);
+   243→  }, [chargerStatut]);
+   244→
+   245→  // À l'ouverture du dialog : statut détaillé + éventuellement journal
+   246→  useEffect(() => {
+   247→    if (ouvert) void chargerStatut(false);
+   248→  }, [ouvert, chargerStatut]);
+   249→
+   250→  useEffect(() => {
+   251→    if (ouvert && onglet === "journal") void chargerJournal();
+   252→  }, [ouvert, onglet, chargerJournal]);
+   253→
+   254→  /** Test de connexion sans enregistrer. */
+   255→  async function testerConnexion() {
+   256→    setTestEnCours(true);
+   257→    try {
+   258→      const res = await fetch("/api/cloud", {
+   259→        method: "POST",
+   260→        headers: { "Content-Type": "application/json" },
+   261→        body: JSON.stringify({ action: "test", url, cle }),
+   262→      });
+   263→      const data = await res.json();
+   264→      if (!res.ok) {
+   265→        toast({ variant: "destructive", title: data.error ?? "Test échoué." });
+   266→        return;
+   267→      }
+   268→      toast({ title: data.message ?? "Connexion réussie." });
+   269→    } catch {
+   270→      toast({ variant: "destructive", title: "Test impossible (réseau)." });
+   271→    } finally {
+   272→      setTestEnCours(false);
+   273→    }
+   274→  }
+   275→
+   276→  /** Enregistre la connexion (testée au préalable côté serveur). */
+   277→  async function enregistrerConnexion() {
+   278→    setSaveEnCours(true);
+   279→    try {
+   280→      const res = await fetch("/api/cloud", {
+   281→        method: "POST",
+   282→        headers: { "Content-Type": "application/json" },
+   283→        body: JSON.stringify({ action: "save", url, cle }),
+   284→      });
+   285→      const data = await res.json();
+   286→      if (!res.ok) {
+   287→        toast({ variant: "destructive", title: data.error ?? "Enregistrement refusé." });
+   288→        await chargerStatut(true);
+   289→        return;
+   290→      }
+   291→      toast({
+   292→        title: data.message ?? "Connexion enregistrée.",
+   293→        description:
+   294→          "Les événements en attente partent automatiquement vers Supabase.",
+   295→      });
+   296→      setCle("");
+   297→      await chargerStatut(true);
+   298→    } catch {
+   299→      toast({
+   300→        variant: "destructive",
+   301→        title: "Enregistrement impossible (réseau).",
+   302→      });
+   303→    } finally {
+   304→      setSaveEnCours(false);
+   305→    }
+   306→  }
+   307→
+   308→  /** Change le site de travail. */
+   309→  async function enregistrerSite(id: string, label: string) {
+   310→    setSiteEnCours(true);
+   311→    try {
+   312→      const res = await fetch("/api/cloud", {
+   313→        method: "POST",
+   314→        headers: { "Content-Type": "application/json" },
+   315→        body: JSON.stringify({ action: "site", siteId: id, siteLabel: label }),
+   316→      });
+   317→      const data = await res.json();
+   318→      if (!res.ok) {
+   319→        toast({ variant: "destructive", title: data.error ?? "Site non enregistré." });
+   320→        return;
+   321→      }
+   322→      toast({ title: data.message ?? "Site enregistré." });
+   323→      await chargerStatut(true);
+   324→    } catch {
+   325→      toast({
+   326→        variant: "destructive",
+   327→        title: "Enregistrement du site impossible (réseau).",
+   328→      });
+   329→    } finally {
+   330→      setSiteEnCours(false);
+   331→    }
+   332→  }
+   333→
+   334→  /** Déconnecte Supabase (la file locale est conservée). */
+   335→  async function deconnecter() {
+   336→    try {
+   337→      const res = await fetch("/api/cloud", {
+   338→        method: "POST",
+   339→        headers: { "Content-Type": "application/json" },
+   340→        body: JSON.stringify({ action: "disconnect" }),
+   341→      });
+   342→      const data = await res.json();
+   343→      if (!res.ok) {
+   344→        toast({ variant: "destructive", title: data.error ?? "Déconnexion impossible." });
+   345→        return;
+   346→      }
+   347→      toast({ title: data.message ?? "Connexion supprimée." });
+   348→      setUrl("");
+   349→      setCle("");
+   350→      await chargerStatut(true);
+   351→    } catch {
+   352→      toast({ variant: "destructive", title: "Déconnexion impossible (réseau)." });
+   353→    }
+   354→  }
+   355→
+   356→  /** Vidage manuel de la file. */
+   357→  async function synchroniser() {
+   358→    setSyncEnCours(true);
+   359→    try {
+   360→      const res = await fetch("/api/cloud/sync", { method: "POST" });
+   361→      const data = await res.json();
+   362→      if (!res.ok) {
+   363→        toast({
+   364→          variant: "destructive",
+   365→          title: data.error ?? "Synchronisation impossible.",
+   366→        });
+   367→        return;
+   368→      }
+   369→      if (data.nonConfigure) {
+   370→        toast({
+   371→          title: "Cloud non configuré — les événements restent en file d'attente locale.",
+   372→        });
+   373→      } else if (data.erreur) {
+   374→        toast({
+   375→          variant: "destructive",
+   376→          title: `${data.poussees} événement(s) envoyé(s), ${data.restantes} en attente.`,
+   377→          description: data.erreur,
+   378→        });
+   379→      } else if (data.poussees === 0 && data.restantes === 0) {
+   380→        toast({ title: "Tout est à jour — rien à synchroniser." });
+   381→      } else {
+   382→        toast({ title: `${data.poussees} événement(s) envoyé(s) vers Supabase.` });
+   383→      }
+   384→      await chargerStatut(true);
+   385→    } catch {
+   386→      toast({
+   387→        variant: "destructive",
+   388→        title: "Synchronisation impossible (réseau).",
+   389→      });
+   390→    } finally {
+   391→      setSyncEnCours(false);
+   392→    }
+   393→  }
+   394→
+   395→  /** Copie le script SQL (fallback : ouverture dans un onglet). */
+   396→  async function copierScriptSql() {
+   397→    try {
+   398→      const res = await fetch("/supabase-schema.sql");
+   399→      const texte = await res.text();
+   400→      await navigator.clipboard.writeText(texte);
+   401→      setCopieSql(true);
+   402→      toast({
+   403→        title: "Script SQL copié — collez-le dans le SQL Editor de Supabase.",
+   404→      });
+   405→      setTimeout(() => setCopieSql(false), 2_500);
+   406→    } catch {
+   407→      window.open("/supabase-schema.sql", "_blank");
+   408→      toast({
+   409→        title: "Copie impossible : le script s'ouvre dans un onglet (Ctrl+A puis copier).",
+   410→      });
+   411→    }
+   412→  }
+   413→
+   414→  const configure = statut?.configure ?? false;
+   415→  const enAttente = statut?.file.enAttente ?? 0;
+   416→
+   417→  return (
+   418→    <Dialog open={ouvert} onOpenChange={setOuvert}>
+   419→      <Tooltip>
+   420→        <TooltipTrigger asChild>
+   421→          <DialogTrigger asChild>
+   422→            <Button
+   423→              variant="ghost"
+   424→              size="icon"
+   425→              aria-label="Base de données cloud (Supabase)"
+   426→              className="relative h-9 w-9 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+   427→            >
+   428→              <CloudUpload className="h-4 w-4" aria-hidden="true" />
+   429→              <span
+   430→                className={`absolute right-1.5 top-1.5 h-2 w-2 rounded-full ring-2 ring-zinc-900 dark:ring-zinc-950 ${couleurPoint(statut)}`}
+   431→                aria-hidden="true"
+   432→              />
+   433→            </Button>
+   434→          </DialogTrigger>
+   435→        </TooltipTrigger>
+   436→        <TooltipContent>
+   437→          <p>
+   438→            {configure
+   439→              ? `Cloud connecté (${statut?.site.label}) — ${enAttente} événement(s) en attente`
+   440→              : "Base de données cloud (Supabase) — non configurée"}
+   441→          </p>
+   442→        </TooltipContent>
+   443→      </Tooltip>
+   444→
+   445→      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
+   446→        <DialogHeader>
+   447→          <DialogTitle className="flex items-center gap-2 text-base">
+   448→            <CloudUpload className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   449→            Base de données cloud — Supabase
+   450→          </DialogTitle>
+   451→          <DialogDescription>
+   452→            Toutes les étiquettes, impressions et scans convergent dans une base
+   453→            partagée : la France et les 2 façonniers tunisiens voient la même
+   454→            production en temps réel.
+   455→          </DialogDescription>
+   456→        </DialogHeader>
+   457→
+   458→        <Tabs value={onglet} onValueChange={setOnglet}>
+   459→          <TabsList className="grid w-full grid-cols-3">
+   460→            <TabsTrigger value="connexion">Connexion</TabsTrigger>
+   461→            <TabsTrigger value="journal">Journal des sites</TabsTrigger>
+   462→            <TabsTrigger value="guide">Guide</TabsTrigger>
+   463→          </TabsList>
+   464→
+   465→          {/* ---------------------------------------------------- Connexion */}
+   466→          <TabsContent value="connexion" className="mt-4 space-y-4">
+   467→            {/* Site de travail */}
+   468→            <section
+   469→              className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
+   470→              aria-label="Site de travail"
+   471→            >
+   472→              <div className="mb-2 flex flex-wrap items-center gap-2">
+   473→                <Building2 className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   474→                <h3 className="text-sm font-semibold">Site de travail</h3>
+   475→                <Badge variant="outline" className="ml-auto font-normal text-zinc-500">
+   476→                  étiquette chaque événement
+   477→                </Badge>
+   478→              </div>
+   479→              <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+   480→                Qui utilise cette installation ? Chaque site marque ses étiquettes
+   481→                et impressions de son nom dans la base partagée.
+   482→              </p>
+   483→              <Select
+   484→                value={siteChoisi}
+   485→                onValueChange={(v) => {
+   486→                  setSiteChoisi(v);
+   487→                  const predefini = SITES_PREDEFINIS.find((s) => s.id === v);
+   488→                  if (predefini && statut?.site.id !== predefini.id) {
+   489→                    void enregistrerSite(predefini.id, predefini.label);
+   490→                  }
+   491→                }}
+   492→              >
+   493→                <SelectTrigger aria-label="Choisir le site de travail">
+   494→                  <SelectValue placeholder="Choisir un site" />
+   495→                </SelectTrigger>
+   496→                <SelectContent>
+   497→                  {SITES_PREDEFINIS.map((s) => (
+   498→                    <SelectItem key={s.id} value={s.id}>
+   499→                      {s.label}
+   500→                    </SelectItem>
+   501→                  ))}
+   502→                  <SelectItem value="autre">Autre site…</SelectItem>
+   503→                </SelectContent>
+   504→              </Select>
+   505→              {siteChoisi === "autre" && (
+   506→                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+   507→                  <div className="grid gap-1.5">
+   508→                    <Label htmlFor="cloud-site-id" className="text-xs">
+   509→                      Identifiant (a-z, 0-9, tirets)
+   510→                    </Label>
+   511→                    <Input
+   512→                      id="cloud-site-id"
+   513→                      value={siteIdPerso}
+   514→                      onChange={(e) => setSiteIdPerso(e.target.value.toLowerCase())}
+   515→                      placeholder="tn-fac3"
+   516→                      className="h-9"
+   517→                    />
+   518→                  </div>
+   519→                  <div className="grid gap-1.5">
+   520→                    <Label htmlFor="cloud-site-label" className="text-xs">
+   521→                      Libellé affiché
+   522→                    </Label>
+   523→                    <Input
+   524→                      id="cloud-site-label"
+   525→                      value={siteLabelPerso}
+   526→                      onChange={(e) => setSiteLabelPerso(e.target.value)}
+   527→                      placeholder="Tunisie — Façonnier 3"
+   528→                      className="h-9"
+   529→                    />
+   530→                  </div>
+   531→                  <Button
+   532→                    size="sm"
+   533→                    className="sm:col-span-2"
+   534→                    disabled={siteEnCours || !siteIdPerso.trim() || !siteLabelPerso.trim()}
+   535→                    onClick={() => void enregistrerSite(siteIdPerso.trim(), siteLabelPerso.trim())}
+   536→                  >
+   537→                    {siteEnCours ? (
+   538→                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+   539→                    ) : (
+   540→                      <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+   541→                    )}
+   542→                    Enregistrer ce site
+   543→                  </Button>
+   544→                </div>
+   545→              )}
+   546→            </section>
+   547→
+   548→            {/* Connexion Supabase */}
+   549→            <section
+   550→              className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
+   551→              aria-label="Connexion Supabase"
+   552→            >
+   553→              <div className="mb-2 flex flex-wrap items-center gap-2">
+   554→                <Database className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   555→                <h3 className="text-sm font-semibold">Connexion au projet Supabase</h3>
+   556→                {configure ? (
+   557→                  <Badge className="ml-auto bg-emerald-600 text-white hover:bg-emerald-600">
+   558→                    Connecté
+   559→                  </Badge>
+   560→                ) : (
+   561→                  <Badge
+   562→                    variant="outline"
+   563→                    className="ml-auto border-amber-500 text-amber-600 dark:text-amber-400"
+   564→                  >
+   565→                    Non configuré
+   566→                  </Badge>
+   567→                )}
+   568→              </div>
+   569→
+   570→              {statut?.cleApercu && (
+   571→                <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+   572→                  Connexion actuelle :{" "}
+   573→                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{statut.url}</span>{" "}
+   574→                  · clé {statut.cleApercu}
+   575→                </p>
+   576→              )}
+   577→
+   578→              <div className="grid gap-3">
+   579→                <div className="grid gap-1.5">
+   580→                  <Label htmlFor="cloud-url" className="text-xs">
+   581→                    URL du projet (Project Settings → API → Project URL)
+   582→                  </Label>
+   583→                  <Input
+   584→                    id="cloud-url"
+   585→                    value={url}
+   586→                    onChange={(e) => setUrl(e.target.value)}
+   587→                    placeholder="https://xxxxxxxx.supabase.co"
+   588→                    className="h-9"
+   589→                    autoComplete="off"
+   590→                    spellCheck={false}
+   591→                  />
+   592→                </div>
+   593→                <div className="grid gap-1.5">
+   594→                  <Label htmlFor="cloud-cle" className="text-xs">
+   595→                    Clé service_role (API → service_role / secret)
+   596→                  </Label>
+   597→                  <div className="relative">
+   598→                    <Input
+   599→                      id="cloud-cle"
+   600→                      type={voirCle ? "text" : "password"}
+   601→                      value={cle}
+   602→                      onChange={(e) => setCle(e.target.value)}
+   603→                      placeholder={statut?.cleApercu ?? "eyJhbGciOi… ou sb_secret_…"}
+   604→                      className="h-9 pr-10"
+   605→                      autoComplete="off"
+   606→                      spellCheck={false}
+   607→                    />
+   608→                    <button
+   609→                      type="button"
+   610→                      onClick={() => setVoirCle((v) => !v)}
+   611→                      aria-label={voirCle ? "Masquer la clé" : "Afficher la clé"}
+   612→                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+   613→                    >
+   614→                      {voirCle ? (
+   615→                        <EyeOff className="h-4 w-4" aria-hidden="true" />
+   616→                      ) : (
+   617→                        <Eye className="h-4 w-4" aria-hidden="true" />
+   618→                      )}
+   619→                    </button>
+   620→                  </div>
+   621→                </div>
+   622→                <div className="flex flex-wrap gap-2">
+   623→                  <Button
+   624→                    variant="outline"
+   625→                    size="sm"
+   626→                    disabled={testEnCours || !url.trim() || !cle.trim()}
+   627→                    onClick={() => void testerConnexion()}
+   628→                  >
+   629→                    {testEnCours ? (
+   630→                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+   631→                    ) : null}
+   632→                    Tester la connexion
+   633→                  </Button>
+   634→                  <Button
+   635→                    size="sm"
+   636→                    className="bg-amber-600 text-white hover:bg-amber-700"
+   637→                    disabled={saveEnCours || !url.trim() || !cle.trim()}
+   638→                    onClick={() => void enregistrerConnexion()}
+   639→                  >
+   640→                    {saveEnCours ? (
+   641→                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+   642→                    ) : null}
+   643→                    Enregistrer et connecter
+   644→                  </Button>
+   645→                  {configure && (
+   646→                    <Button
+   647→                      variant="ghost"
+   648→                      size="sm"
+   649→                      className="text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
+   650→                      onClick={() => void deconnecter()}
+   651→                    >
+   652→                      Déconnecter
+   653→                    </Button>
+   654→                  )}
+   655→                </div>
+   656→              </div>
+   657→            </section>
+   658→
+   659→            {/* Synchronisation */}
+   660→            <section
+   661→              className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
+   662→              aria-label="Synchronisation"
+   663→            >
+   664→              <div className="mb-3 flex flex-wrap items-center gap-2">
+   665→                <RefreshCw className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   666→                <h3 className="text-sm font-semibold">Synchronisation</h3>
+   667→              </div>
+   668→              <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+   669→                <div className="rounded-md bg-zinc-50 p-2 dark:bg-zinc-900">
+   670→                  <dt className="text-xs text-zinc-500">En attente</dt>
+   671→                  <dd className="text-lg font-bold leading-tight">{enAttente}</dd>
+   672→                </div>
+   673→                <div className="rounded-md bg-zinc-50 p-2 dark:bg-zinc-900">
+   674→                  <dt className="text-xs text-zinc-500">Synchronisées</dt>
+   675→                  <dd className="text-lg font-bold leading-tight">
+   676→                    {statut?.file.synchronisees.toLocaleString("fr-FR") ?? 0}
+   677→                  </dd>
+   678→                </div>
+   679→                <div className="rounded-md bg-zinc-50 p-2 dark:bg-zinc-900">
+   680→                  <dt className="text-xs text-zinc-500">Dernier envoi</dt>
+   681→                  <dd className="text-sm font-medium leading-tight">
+   682→                    {relatif(statut?.derniereSyncAt ?? null)}
+   683→                  </dd>
+   684→                </div>
+   685→                <div className="rounded-md bg-zinc-50 p-2 dark:bg-zinc-900">
+   686→                  <dt className="text-xs text-zinc-500">Dernier test</dt>
+   687→                  <dd className="flex items-center gap-1 text-sm font-medium leading-tight">
+   688→                    {statut?.dernierTest.ok === true ? (
+   689→                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
+   690→                    ) : statut?.dernierTest.ok === false ? (
+   691→                      <XCircle className="h-3.5 w-3.5 text-red-500" aria-hidden="true" />
+   692→                    ) : null}
+   693→                    {statut?.dernierTest.ok === true
+   694→                      ? "OK"
+   695→                      : statut?.dernierTest.ok === false
+   696→                        ? "Échec"
+   697→                        : "—"}
+   698→                  </dd>
+   699→                </div>
+   700→              </dl>
+   701→              {statut?.dernierTest.ok === false && statut.dernierTest.erreur && (
+   702→                <p className="mt-2 rounded-md bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
+   703→                  {statut.dernierTest.erreur}
+   704→                </p>
+   705→              )}
+   706→              <div className="mt-3 flex flex-wrap items-center gap-2">
+   707→                <Button variant="outline" size="sm" disabled={syncEnCours} onClick={() => void synchroniser()}>
+   708→                  {syncEnCours ? (
+   709→                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+   710→                  ) : (
+   711→                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+   712→                  )}
+   713→                  Synchroniser maintenant
+   714→                </Button>
+   715→                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+   716→                  Reprise automatique toutes les 30 s — rien n&apos;est perdu en cas de coupure.
+   717→                </p>
+   718→              </div>
+   719→              <p className="mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
+   720→                Sécurité : la clé reste stockée uniquement sur ce poste (côté
+   721→                serveur), jamais affichée en clair. Les données locales partent
+   722→                vers votre projet Supabase et nulle part ailleurs.
+   723→              </p>
+   724→            </section>
+   725→          </TabsContent>
+   726→
+   727→          {/* --------------------------------------------- Journal des sites */}
+   728→          <TabsContent value="journal" className="mt-4 space-y-4">
+   729→            {!configure ? (
+   730→              <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
+   731→                <CloudOff className="h-8 w-8 text-zinc-400" aria-hidden="true" />
+   732→                <p className="text-sm font-medium">Base cloud non connectée</p>
+   733→                <p className="max-w-sm text-xs text-zinc-500 dark:text-zinc-400">
+   734→                  Connectez Supabase dans l&apos;onglet « Connexion » pour
+   735→                  consulter ici l&apos;activité de tous les sites (étiquettes
+   736→                  générées, fichiers imprimés) et préparer les réceptions W-1.
+   737→                </p>
+   738→              </div>
+   739→            ) : (
+   740→              <>
+   741→                <div className="flex flex-wrap items-center gap-2">
+   742→                  <Select value={filtreSite} onValueChange={setFiltreSite}>
+   743→                    <SelectTrigger className="h-9 w-[200px]" aria-label="Filtrer par site">
+   744→                      <SelectValue />
+   745→                    </SelectTrigger>
+   746→                    <SelectContent>
+   747→                      <SelectItem value="tous">Tous les sites</SelectItem>
+   748→                      {(journal?.parSite ?? []).map((s) => (
+   749→                        <SelectItem key={s.siteId} value={s.siteId}>
+   750→                          {s.siteLabel}
+   751→                        </SelectItem>
+   752→                      ))}
+   753→                    </SelectContent>
+   754→                  </Select>
+   755→                  <Select value={filtrePeriode} onValueChange={setFiltrePeriode}>
+   756→                    <SelectTrigger className="h-9 w-[190px]" aria-label="Filtrer par période">
+   757→                      <SelectValue />
+   758→                    </SelectTrigger>
+   759→                    <SelectContent>
+   760→                      {PERIODES_JOURNAL.map((p) => (
+   761→                        <SelectItem key={p.id} value={p.id}>
+   762→                          {p.label}
+   763→                        </SelectItem>
+   764→                      ))}
+   765→                    </SelectContent>
+   766→                  </Select>
+   767→                  <Button
+   768→                    variant="outline"
+   769→                    size="sm"
+   770→                    className="ml-auto"
+   771→                    disabled={journalChargement}
+   772→                    onClick={() => void chargerJournal()}
+   773→                  >
+   774→                    {journalChargement ? (
+   775→                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+   776→                    ) : (
+   777→                      <RefreshCw className="h-4 w-4" aria-hidden="true" />
+   778→                    )}
+   779→                    Actualiser
+   780→                  </Button>
+   781→                </div>
+   782→
+   783→                {/* Tuiles de synthèse */}
+   784→                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+   785→                  {[
+   786→                    { libelle: "Étiquettes", valeur: journal?.totaux.etiquettes, detail: "générées" },
+   787→                    { libelle: "Pièces", valeur: journal?.totaux.pieces, detail: "copies comprises" },
+   788→                    { libelle: "Impressions", valeur: journal?.totaux.impressions, detail: "fichiers" },
+   789→                    { libelle: "Sites actifs", valeur: journal?.totaux.sitesActifs, detail: "sur la période" },
+   790→                  ].map((t) => (
+   791→                    <div
+   792→                      key={t.libelle}
+   793→                      className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
+   794→                    >
+   795→                      <p className="text-xs text-zinc-500">{t.libelle}</p>
+   796→                      <p className="text-xl font-bold leading-tight">
+   797→                        {journalChargement && journal === null ? (
+   798→                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+   799→                        ) : (
+   800→                          (t.valeur ?? 0).toLocaleString("fr-FR")
+   801→                        )}
+   802→                      </p>
+   803→                      <p className="text-[11px] text-zinc-400">{t.detail}</p>
+   804→                    </div>
+   805→                  ))}
+   806→                </div>
+   807→
+   808→                {/* Détail par site */}
+   809→                {journal && journal.parSite.length > 0 && (
+   810→                  <div className="flex flex-wrap gap-2">
+   811→                    {journal.parSite.map((s) => (
+   812→                      <Badge
+   813→                        key={s.siteId}
+   814→                        variant="outline"
+   815→                        className="gap-1.5 border-zinc-300 px-2.5 py-1 font-normal dark:border-zinc-700"
+   816→                      >
+   817→                        {s.siteId === "france-hq" ? (
+   818→                          <Building2 className="h-3 w-3 text-amber-600" aria-hidden="true" />
+   819→                        ) : (
+   820→                          <Factory className="h-3 w-3 text-amber-600" aria-hidden="true" />
+   821→                        )}
+   822→                        {s.siteLabel} — {s.etiquettes} ét. / {s.pieces} p.
+   823→                      </Badge>
+   824→                    ))}
+   825→                  </div>
+   826→                )}
+   827→
+   828→                {/* Dernières étiquettes */}
+   829→                <section aria-label="Dernières étiquettes générées">
+   830→                  <h3 className="mb-1.5 text-sm font-semibold">Dernières étiquettes générées</h3>
+   831→                  <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+   832→                    {journalChargement && journal === null ? (
+   833→                      <div className="space-y-2 p-3">
+   834→                        {[0, 1, 2].map((i) => (
+   835→                          <div key={i} className="h-8 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+   836→                        ))}
+   837→                      </div>
+   838→                    ) : !journal || journal.etiquettes.length === 0 ? (
+   839→                      <p className="p-4 text-center text-sm text-zinc-500">
+   840→                        Aucune étiquette sur la période sélectionnée.
+   841→                      </p>
+   842→                    ) : (
+   843→                      <table className="w-full text-sm">
+   844→                        <thead className="sticky top-0 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-900">
+   845→                          <tr>
+   846→                            <th className="px-2.5 py-2 font-medium">Site</th>
+   847→                            <th className="px-2.5 py-2 font-medium">Modèle</th>
+   848→                            <th className="px-2.5 py-2 font-medium">Couleur</th>
+   849→                            <th className="px-2.5 py-2 font-medium">Taille</th>
+   850→                            <th className="px-2.5 py-2 font-medium">OF</th>
+   851→                            <th className="px-2.5 py-2 text-right font-medium">Qté</th>
+   852→                            <th className="px-2.5 py-2 text-right font-medium">Quand</th>
+   853→                          </tr>
+   854→                        </thead>
+   855→                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+   856→                          {journal.etiquettes.map((e, i) => (
+   857→                            <tr key={`${e.siteId}-${e.genereAt}-${i}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-900">
+   858→                              <td className="px-2.5 py-1.5 text-xs text-zinc-500">{e.siteLabel}</td>
+   859→                              <td className="px-2.5 py-1.5 font-medium">{e.modele || "—"}</td>
+   860→                              <td className="px-2.5 py-1.5">{e.couleur || "—"}</td>
+   861→                              <td className="px-2.5 py-1.5">{e.taille || "—"}</td>
+   862→                              <td className="px-2.5 py-1.5 font-mono text-xs">{e.of || "—"}</td>
+   863→                              <td className="px-2.5 py-1.5 text-right">
+   864→                                {e.quantite > 1 ? (
+   865→                                  <Badge className="bg-amber-600 text-white hover:bg-amber-600">×{e.quantite}</Badge>
+   866→                                ) : (
+   867→                                  "1"
+   868→                                )}
+   869→                              </td>
+   870→                              <td className="px-2.5 py-1.5 text-right text-xs text-zinc-500">
+   871→                                {relatif(e.genereAt)}
+   872→                              </td>
+   873→                            </tr>
+   874→                          ))}
+   875→                        </tbody>
+   876→                      </table>
+   877→                    )}
+   878→                  </div>
+   879→                </section>
+   880→
+   881→                {/* Derniers fichiers imprimés */}
+   882→                <section aria-label="Derniers fichiers imprimés">
+   883→                  <h3 className="mb-1.5 text-sm font-semibold">Derniers fichiers produits</h3>
+   884→                  <div className="max-h-40 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+   885→                    {!journal || journal.impressions.length === 0 ? (
+   886→                      <p className="p-3 text-center text-sm text-zinc-500">
+   887→                        Aucun fichier sur la période.
+   888→                      </p>
+   889→                    ) : (
+   890→                      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+   891→                        {journal.impressions.map((f, i) => (
+   892→                          <li key={`${f.siteId}-${f.eventAt}-${i}`} className="flex items-center gap-2 px-3 py-2 text-sm">
+   893→                            {f.kind === "NLBL" ? (
+   894→                              <Printer className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+   895→                            ) : (
+   896→                              <FileText className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+   897→                            )}
+   898→                            <span className="min-w-0 flex-1 truncate font-mono text-xs" title={f.filename}>
+   899→                              {f.filename}
+   900→                            </span>
+   901→                            <Badge variant="outline" className="font-normal text-zinc-500">
+   902→                              {f.labelsCount} ét.
+   903→                            </Badge>
+   904→                            <span className="w-24 shrink-0 truncate text-right text-xs text-zinc-500" title={f.siteLabel}>
+   905→                              {f.siteLabel}
+   906→                            </span>
+   907→                            <span className="w-16 shrink-0 text-right text-xs text-zinc-400">
+   908→                              {relatif(f.eventAt)}
+   909→                            </span>
+   910→                          </li>
+   911→                        ))}
+   912→                      </ul>
+   913→                    )}
+   914→                  </div>
+   915→                </section>
+   916→              </>
+   917→            )}
+   918→          </TabsContent>
+   919→
+   920→          {/* ------------------------------------------------------- Guide */}
+   921→          <TabsContent value="guide" className="mt-4 space-y-4">
+   922→            <ol className="space-y-3">
+   923→              {[
+   924→                {
+   925→                  titre: "Créer le projet Supabase (gratuit)",
+   926→                  texte: "Sur supabase.com → New project. Région conseillée : Europe de l'Ouest (Paris / Francfort). Conservez le mot de passe de la base proposé.",
+   927→                  lien: true,
+   928→                },
+   929→                {
+   930→                  titre: "Créer les tables",
+   931→                  texte: "Menu SQL Editor → New query → collez le script ci-dessous → Run. 5 tables sont créées (étiquettes, impressions, réceptions, lignes, scans).",
+   932→                  boutonSql: true,
+   933→                },
+   934→                {
+   935→                  titre: "Copier l'URL et la clé",
+   936→                  texte: "Project Settings → API : Project URL + clé service_role (secret).",
+   937→                },
+   938→                {
+   939→                  titre: "Connecter cette application",
+   940→                  texte: "Onglet « Connexion » → coller l'URL et la clé → Tester → Enregistrer et connecter. Les événements déjà en file partent immédiatement.",
+   941→                },
+   942→                {
+   943→                  titre: "Choisir le site sur chaque poste",
+   944→                  texte: "France : « France — Clément Design ». Façonnier 1 : « Tunisie — Façonnier 1 ». Façonnier 2 : « Tunisie — Façonnier 2 ». Chaque impression est alors signée de son site dans la base partagée.",
+   945→                },
+   946→              ].map((etape, i) => (
+   947→                <li key={etape.titre} className="flex gap-3">
+   948→                  <span
+   949→                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-600 text-xs font-bold text-white"
+   950→                    aria-hidden="true"
+   951→                  >
+   952→                    {i + 1}
+   953→                  </span>
+   954→                  <div className="min-w-0 flex-1">
+   955→                    <p className="text-sm font-semibold">{etape.titre}</p>
+   956→                    <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+   957→                      {etape.texte}
+   958→                    </p>
+   959→                    {etape.boutonSql && (
+   960→                      <Button variant="outline" size="sm" className="mt-2" onClick={() => void copierScriptSql()}>
+   961→                        {copieSql ? (
+   962→                          <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden="true" />
+   963→                        ) : (
+   964→                          <Copy className="h-4 w-4" aria-hidden="true" />
+   965→                        )}
+   966→                        {copieSql ? "Script copié" : "Copier le script SQL"}
+   967→                      </Button>
+   968→                    )}
+   969→                    {etape.lien && (
+   970→                      <a
+   971→                        href="https://supabase.com/dashboard/new"
+   972→                        target="_blank"
+   973→                        rel="noopener noreferrer"
+   974→                        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-amber-600 hover:underline dark:text-amber-400"
+   975→                      >
+   976→                        Ouvrir supabase.com
+   977→                        <ExternalLink className="h-3 w-3" aria-hidden="true" />
+   978→                      </a>
+   979→                    )}
+   980→                  </div>
+   981→                </li>
+   982→              ))}
+   983→            </ol>
+   984→
+   985→            {/* Schéma multi-sites */}
+   986→            <section
+   987→              className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900"
+   988→              aria-label="Vue d'ensemble multi-sites"
+   989→            >
+   990→              <h3 className="mb-3 text-sm font-semibold">Vue d&apos;ensemble — flux W-1</h3>
+   991→              <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+   992→                <div className="space-y-2">
+   993→                  {[
+   994→                    { icone: Building2, texte: "France — Clément Design" },
+   995→                    { icone: Factory, texte: "Tunisie — Façonnier 1" },
+   996→                    { icone: Factory, texte: "Tunisie — Façonnier 2" },
+   997→                  ].map(({ icone: Icone, texte }) => (
+   998→                    <div
+   999→                      key={texte}
+  1000→                      className="flex items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-950"
+  1001→                    >
+  1002→                      <Icone className="h-3.5 w-3.5 text-amber-600" aria-hidden="true" />
+  1003→                      {texte}
+  1004→                    </div>
+  1005→                  ))}
+  1006→                </div>
+  1007→                <ArrowDown className="mx-auto h-5 w-5 rotate-90 text-zinc-400 sm:rotate-0" aria-hidden="true" />
+  1008→                <div className="rounded-md border border-amber-500/60 bg-amber-50 px-3 py-3 text-center dark:bg-amber-950/40">
+  1009→                  <Database className="mx-auto mb-1 h-4 w-4 text-amber-600" aria-hidden="true" />
+  1010→                  <p className="text-xs font-semibold">Base Supabase partagée</p>
+  1011→                  <p className="mt-0.5 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+  1012→                    étiquettes · impressions · réceptions · scans
+  1013→                  </p>
+  1014→                </div>
+  1015→              </div>
+  1016→              <p className="mt-3 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+  1017→                Semaine N : le façonnier imprime ses étiquettes (visibles
+  1018→                immédiatement dans la base). Semaine N+1 : Clément Design
+  1019→                réceptionne les pièces et compare les scans au prévu depuis
+  1020→                l&apos;espace Colisage.
+  1021→              </p>
+  1022→            </section>
+  1023→
+  1024→            <p className="rounded-md border border-zinc-200 p-3 text-[11px] leading-relaxed text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+  1025→              <strong className="font-semibold text-zinc-700 dark:text-zinc-300">
+  1026→                Accès multi-utilisateurs complet :
+  1027→              </strong>{" "}
+  1028→              tant que l&apos;application tourne sur un poste local, chaque site
+  1029→              voit ici l&apos;activité des autres via la base cloud. Pour que les
+  1030→              façonniers utilisent l&apos;application directement dans leur
+  1031→              navigateur (sans installation), l&apos;application sera déployée en
+  1032→              ligne avec Supabase comme base principale — chemin documenté dans
+  1033→              README-SUPABASE.md.
+  1034→            </p>
+  1035→          </TabsContent>
+  1036→        </Tabs>
+  1037→      </DialogContent>
+  1038→    </Dialog>
+  1039→  );
+  1040→}
+  1041→

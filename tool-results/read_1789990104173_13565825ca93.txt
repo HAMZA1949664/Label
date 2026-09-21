@@ -1,0 +1,707 @@
+     1→   530→                Générateur d&apos;étiquettes
+     2→   531→              </h1>
+     3→   532→            </div>
+     4→   533→          </div>
+     5→   534→          <div className="flex items-center gap-2">
+     6→   535→            <Badge
+     7→   536→              variant="outline"
+     8→   537→              className="border-zinc-700 bg-zinc-800 text-zinc-300"
+     9→   538→            >
+    10→   539→              {chargementCatalogue
+    11→   540→                ? "Catalogue…"
+    12→   541→                : `${records.length.toLocaleString("fr-FR")} références`}
+    13→   542→            </Badge>
+    14→   543→            <Badge className="bg-amber-600 text-white hover:bg-amber-600">
+    15→   544→              Zebra Designer Essentials 3
+    16→   545→            </Badge>
+    17→   546→          </div>
+    18→   547→        </div>
+    19→   548→      </header>
+    20→   549→
+    21→   550→      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
+    22→   551→        {erreurCatalogue && (
+    23→   552→          <Card className="mb-6 border-red-300 bg-red-50">
+    24→   553→            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+    25→   554→              <div className="flex items-center gap-2 text-sm text-red-800">
+    26→   555→                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+    27→   556→                Impossible de charger le catalogue : {erreurCatalogue}
+    28→   557→              </div>
+    29→   558→              <Button size="sm" variant="outline" onClick={chargerCatalogue}>
+    30→   559→                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+    31→   560→                Réessayer
+    32→   561→              </Button>
+    33→   562→            </CardContent>
+    34→   563→          </Card>
+    35→   564→        )}
+    36→   565→
+    37→   566→        <div className="grid gap-6 lg:grid-cols-12">
+    38→   567→          {/* ------------------------- Colonne gauche ------------------------- */}
+    39→   568→          <div className="min-w-0 space-y-6 lg:col-span-7">
+    40→   569→            {/* Formulaire */}
+    41→   570→            <CarteAnimee delai={0}>
+    42→   571→            <Card>
+    43→   572→              <CardHeader className="pb-4">
+    44→   573→                <CardTitle className="flex items-center gap-2 text-base">
+    45→   574→                  <Printer className="h-4 w-4 text-amber-600" aria-hidden="true" />
+    46→   575→                  Référence à étiqueter
+    47→   576→                </CardTitle>
+    48→   577→                <CardDescription>
+    49→   578→                  Sélectionnez l&apos;article, la couleur, la taille, puis saisissez
+    50→   579→                  l&apos;OF et le type de produit.
+    51→   580→                </CardDescription>
+    52→   581→              </CardHeader>
+    53→   582→              <CardContent className="space-y-4">
+    54→   583→                {/* Article (liste avec recherche) */}
+    55→   584→                <div className="space-y-2">
+    56→   585→                  <Label htmlFor="article">Article</Label>
+    57→   586→                  <Popover open={articleOuvert} onOpenChange={setArticleOuvert}>
+    58→   587→                    <PopoverTrigger asChild>
+    59→   588→                      <Button
+    60→   589→                        id="article"
+    61→   590→                        variant="outline"
+    62→   591→                        role="combobox"
+    63→   592→                        aria-expanded={articleOuvert}
+    64→   593→                        className="h-11 w-full justify-between font-normal"
+    65→   594→                        disabled={chargementCatalogue}
+    66→   595→                      >
+    67→   596→                        <span className={article ? "" : "text-muted-foreground"}>
+    68→   597→                          {article || "Rechercher un article…"}
+    69→   598→                        </span>
+    70→   599→                        <svg
+    71→   600→                          className="h-4 w-4 opacity-50"
+    72→   601→                          viewBox="0 0 24 24"
+    73→   602→                          fill="none"
+    74→   603→                          stroke="currentColor"
+    75→   604→                          strokeWidth="2"
+    76→   605→                          aria-hidden="true"
+    77→   606→                        >
+    78→   607→                          <path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
+    79→   608→                        </svg>
+    80→   609→                      </Button>
+    81→   610→                    </PopoverTrigger>
+    82→   611→                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+    83→   612→                      <Command>
+    84→   613→                        <CommandInput placeholder="Rechercher un article…" />
+    85→   614→                        <CommandList>
+    86→   615→                          <CommandEmpty>Aucun article trouvé.</CommandEmpty>
+    87→   616→                          <CommandGroup>
+    88→   617→                            {articles.map((a) => (
+    89→   618→                              <CommandItem
+    90→   619→                                key={a}
+    91→   620→                                value={a}
+    92→   621→                                onSelect={() => choisirArticle(a)}
+    93→   622→                              >
+    94→   623→                                <CheckCircle2
+    95→   624→                                  className={`mr-2 h-4 w-4 ${
+    96→   625→                                    a === article
+    97→   626→                                      ? "opacity-100 text-amber-600"
+    98→   627→                                      : "opacity-0"
+    99→   628→                                  }`}
+   100→   629→                                  aria-hidden="true"
+   101→   630→                                />
+   102→   631→                                {a}
+   103→   632→                              </CommandItem>
+   104→   633→                            ))}
+   105→   634→                          </CommandGroup>
+   106→   635→                        </CommandList>
+   107→   636→                      </Command>
+   108→   637→                    </PopoverContent>
+   109→   638→                  </Popover>
+   110→   639→                  {/* Articles récemment utilisés */}
+   111→   640→                  {articlesRecents.length > 0 && (
+   112→   641→                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+   113→   642→                      <span className="text-xs text-muted-foreground">Récents :</span>
+   114→   643→                      {articlesRecents.map((a) => (
+   115→   644→                        <button
+   116→   645→                          key={a}
+   117→   646→                          type="button"
+   118→   647→                          onClick={() => choisirArticle(a)}
+   119→   648→                          className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:border-amber-500 hover:bg-amber-50 hover:text-amber-800 ${
+   120→   649→                            a === article
+   121→   650→                              ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
+   122→   651→                              : "border-zinc-200 bg-white text-zinc-600"
+   123→   652→                          }`}
+   124→   653→                        >
+   125→   654→                          {a}
+   126→   655→                        </button>
+   127→   656→                      ))}
+   128→   657→                    </div>
+   129→   658→                  )}
+   130→   659→                </div>
+   131→   660→
+   132→   661→                {/* Couleur / Manche / Taille */}
+   133→   662→                <div className="grid gap-4 sm:grid-cols-3">
+   134→   663→                  <div className="space-y-2">
+   135→   664→                    <Label htmlFor="couleur">Couleur</Label>
+   136→   665→                    <Select
+   137→   666→                      value={couleur}
+   138→   667→                      onValueChange={choisirCouleur}
+   139→   668→                      disabled={!article}
+   140→   669→                    >
+   141→   670→                      <SelectTrigger id="couleur" className="h-11 w-full">
+   142→   671→                        <SelectValue placeholder={article ? "Choisir…" : "—"} />
+   143→   672→                      </SelectTrigger>
+   144→   673→                      <SelectContent>
+   145→   674→                        {couleursList.map((c) => (
+   146→   675→                          <SelectItem key={c} value={c}>
+   147→   676→                            {c} — {couleurLabel(c)[0]}
+   148→   677→                          </SelectItem>
+   149→   678→                        ))}
+   150→   679→                      </SelectContent>
+   151→   680→                    </Select>
+   152→   681→                  </div>
+   153→   682→
+   154→   683→                  <div className="space-y-2">
+   155→   684→                    <Label htmlFor="manche">Manche</Label>
+   156→   685→                    <Select
+   157→   686→                      value={manche}
+   158→   687→                      onValueChange={setManche}
+   159→   688→                      disabled={!article || !couleur || !mancheApplicable}
+   160→   689→                    >
+   161→   690→                      <SelectTrigger id="manche" className="h-11 w-full">
+   162→   691→                        <SelectValue
+   163→   692→                          placeholder={mancheApplicable ? "Choisir…" : "Sans objet"}
+   164→   693→                        />
+   165→   694→                      </SelectTrigger>
+   166→   695→                      <SelectContent>
+   167→   696→                        {(spe ? ["Longues / Long", "Courtes / Short", "3/4 / 3/4"] : manchesList).map(
+   168→   697→                          (m) => (
+   169→   698→                            <SelectItem key={m} value={m}>
+   170→   699→                              {mancheLabel(m)?.[0] ?? m}
+   171→   700→                            </SelectItem>
+   172→   701→                          )
+   173→   702→                        )}
+   174→   703→                      </SelectContent>
+   175→   704→                    </Select>
+   176→   705→                  </div>
+   177→   706→
+   178→   707→                  <div className="space-y-2">
+   179→   708→                    <Label htmlFor="taille">Taille</Label>
+   180→   709→                    <Select
+   181→   710→                      value={taille}
+   182→   711→                      onValueChange={setTaille}
+   183→   712→                      disabled={!couleur || taillesList.length === 0}
+   184→   713→                    >
+   185→   714→                      <SelectTrigger id="taille" className="h-11 w-full">
+   186→   715→                        <SelectValue placeholder="Choisir…" />
+   187→   716→                      </SelectTrigger>
+   188→   717→                      <SelectContent>
+   189→   718→                        {taillesList.map((t) => (
+   190→   719→                          <SelectItem key={t} value={t}>
+   191→   720→                            {t} — {tailleLabel(t)[0]}
+   192→   721→                          </SelectItem>
+   193→   722→                        ))}
+   194→   723→                      </SelectContent>
+   195→   724→                    </Select>
+   196→   725→                  </div>
+   197→   726→                </div>
+   198→   727→
+   199→   728→                {/* OF / Type / SPE */}
+   200→   729→                <div className="grid gap-4 sm:grid-cols-2">
+   201→   730→                  <div className="space-y-2">
+   202→   731→                    <Label htmlFor="of">N° d&apos;OF (ordre de fabrication)</Label>
+   203→   732→                    <Input
+   204→   733→                      id="of"
+   205→   734→                      value={of}
+   206→   735→                      onChange={(e) => setOf(e.target.value)}
+   207→   736→                      placeholder="ex. 078594"
+   208→   737→                      className="h-11"
+   209→   738→                      maxLength={20}
+   210→   739→                      autoComplete="off"
+   211→   740→                    />
+   212→   741→                  </div>
+   213→   742→                  <div className="space-y-2">
+   214→   743→                    <Label htmlFor="type">Type de produit</Label>
+   215→   744→                    <Select value={typeValue} onValueChange={setTypeValue}>
+   216→   745→                      <SelectTrigger id="type" className="h-11 w-full">
+   217→   746→                        <SelectValue placeholder="Choisir…" />
+   218→   747→                      </SelectTrigger>
+   219→   748→                      <SelectContent>
+   220→   749→                        {TYPES.map((t) => (
+   221→   750→                          <SelectItem key={t.value} value={t.value}>
+   222→   751→                            {t.label}
+   223→   752→                          </SelectItem>
+   224→   753→                        ))}
+   225→   754→                      </SelectContent>
+   226→   755→                    </Select>
+   227→   756→                  </div>
+   228→   757→                </div>
+   229→   758→
+   230→   759→                <div className="flex items-center justify-between rounded-lg border bg-zinc-50 p-3">
+   231→   760→                  <div>
+   232→   761→                    <Label htmlFor="spe" className="text-sm font-medium">
+   233→   762→                      Mode SPE
+   234→   763→                    </Label>
+   235→   764→                    <p className="text-xs text-muted-foreground">
+   236→   765→                      Code-barres calculé automatiquement (préfixe 99) — manche et
+   237→   766→                      taille libres.
+   238→   767→                    </p>
+   239→   768→                  </div>
+   240→   769→                  <Switch id="spe" checked={spe} onCheckedChange={changerSpe} />
+   241→   770→                </div>
+   242→   771→              </CardContent>
+   243→   772→              <CardFooter className="flex flex-col items-stretch gap-3 border-t bg-zinc-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+   244→   773→                {champsManquants.length > 0 ? (
+   245→   774→                  <p className="flex items-center gap-2 text-sm text-amber-700">
+   246→   775→                    <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+   247→   776→                    À compléter : {champsManquants.join(", ")}
+   248→   777→                  </p>
+   249→   778→                ) : (
+   250→   779→                  <p className="flex items-center gap-2 text-sm text-green-700">
+   251→   780→                    <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+   252→   781→                    Prêt à générer
+   253→   782→                  </p>
+   254→   783→                )}
+   255→   784→                <Button
+   256→   785→                  variant="ghost"
+   257→   786→                  size="sm"
+   258→   787→                  onClick={reinitialiser}
+   259→   788→                  className="self-start sm:self-auto"
+   260→   789→                >
+   261→   790→                  <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+   262→   791→                  Réinitialiser
+   263→   792→                </Button>
+   264→   793→              </CardFooter>
+   265→   794→            </Card>
+   266→   795→            </CarteAnimee>
+   267→   796→
+   268→   797→            {/* File d'impression (lot) */}
+   269→   798→            <CarteAnimee delai={0.08}>
+   270→   799→            <Card>
+   271→   800→              <CardHeader className="pb-4">
+   272→   801→                <CardTitle className="flex items-center justify-between gap-2 text-base">
+   273→   802→                  <span className="flex items-center gap-2">
+   274→   803→                    <Layers className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   275→   804→                    File d&apos;impression
+   276→   805→                  </span>
+   277→   806→                  <Badge variant="secondary">
+   278→   807→                    {fileAttente.length} / {MAX_ETIQUETTES}
+   279→   808→                  </Badge>
+   280→   809→                </CardTitle>
+   281→   810→                <CardDescription>
+   282→   811→                  Ajoutez plusieurs étiquettes pour les générer en lot. Un lot de
+   283→   812→                  N étiquettes produit un fichier .zip contenant un .nlbl par
+   284→   813→                  étiquette, données intégrées.
+   285→   814→                </CardDescription>
+   286→   815→              </CardHeader>
+   287→   816→              <CardContent className="space-y-4">
+   288→   817→                <div className="flex flex-wrap gap-2">
+   289→   818→                  <Button
+   290→   819→                    variant="outline"
+   291→   820→                    onClick={ajouterALaFile}
+   292→   821→                    disabled={!peutGenerer || fileAttente.length >= MAX_ETIQUETTES}
+   293→   822→                    className="h-11"
+   294→   823→                  >
+   295→   824→                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+   296→   825→                    Ajouter l&apos;étiquette courante
+   297→   826→                  </Button>
+   298→   827→                  {fileAttente.length > 0 && (
+   299→   828→                    <Button
+   300→   829→                      variant="ghost"
+   301→   830→                      onClick={() => setFileAttente([])}
+   302→   831→                      className="h-11"
+   303→   832→                    >
+   304→   833→                      <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+   305→   834→                      Vider
+   306→   835→                    </Button>
+   307→   836→                  )}
+   308→   837→                </div>
+   309→   838→
+   310→   839→                {fileAttente.length > 0 && (
+   311→   840→                  <div className="max-h-96 overflow-y-auto rounded-lg border">
+   312→   841→                    <ul className="divide-y">
+   313→   842→                      {fileAttente.map((item, index) => (
+   314→   843→                        <li
+   315→   844→                          key={item.id}
+   316→   845→                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-zinc-50"
+   317→   846→                        >
+   318→   847→                          <span className="flex min-w-0 items-center gap-3">
+   319→   848→                            <Badge
+   320→   849→                              variant="outline"
+   321→   850→                              className="w-9 shrink-0 justify-center font-mono"
+   322→   851→                            >
+   323→   852→                              {String(index + 1).padStart(2, "0")}
+   324→   853→                            </Badge>
+   325→   854→                            <span className="truncate" title={item.ref}>
+   326→   855→                              {item.ref}
+   327→   856→                            </span>
+   328→   857→                          </span>
+   329→   858→                          <button
+   330→   859→                            type="button"
+   331→   860→                            aria-label={`Retirer ${item.ref}`}
+   332→   861→                            className="rounded p-1 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+   333→   862→                            onClick={() =>
+   334→   863→                              setFileAttente((q) => q.filter((x) => x.id !== item.id))
+   335→   864→                            }
+   336→   865→                          >
+   337→   866→                            <X className="h-4 w-4" aria-hidden="true" />
+   338→   867→                          </button>
+   339→   868→                        </li>
+   340→   869→                      ))}
+   341→   870→                    </ul>
+   342→   871→                  </div>
+   343→   872→                )}
+   344→   873→              </CardContent>
+   345→   874→              <CardFooter className="border-t bg-zinc-50/60 p-4">
+   346→   875→                <Button
+   347→   876→                  onClick={genererLot}
+   348→   877→                  disabled={fileAttente.length === 0 || lotEnCours}
+   349→   878→                  className="h-11 w-full whitespace-normal bg-amber-600 text-left text-white hover:bg-amber-700 sm:w-auto"
+   350→   879→                >
+   351→   880→                  {lotEnCours ? (
+   352→   881→                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+   353→   882→                  ) : (
+   354→   883→                    <FileArchive className="mr-2 h-4 w-4" aria-hidden="true" />
+   355→   884→                  )}
+   356→   885→                  {lotEnCours
+   357→   886→                    ? "Génération du lot…"
+   358→   887→                    : fileAttente.length === 1
+   359→   888→                      ? "Générer le lot — 1 fichier .NLBL"
+   360→   889→                      : `Générer le lot — archive .zip de ${fileAttente.length} fichiers .NLBL`}
+   361→   890→                </Button>
+   362→   891→              </CardFooter>
+   363→   892→            </Card>
+   364→   893→            </CarteAnimee>
+   365→   894→          </div>
+   366→   895→
+   367→   896→          {/* ------------------------- Colonne droite ------------------------- */}
+   368→   897→          <div className="min-w-0 space-y-6 lg:col-span-5">
+   369→   898→            {/* Aperçu */}
+   370→   899→            <CarteAnimee delai={0.16}>
+   371→   900→            <Card>
+   372→   901→              <CardHeader className="pb-4">
+   373→   902→                <CardTitle className="text-base">Aperçu de l&apos;étiquette</CardTitle>
+   374→   903→                <CardDescription>
+   375→   904→                  Format 55 × 35 mm — rendu identique au modèle cLEMENT2.
+   376→   905→                </CardDescription>
+   377→   906→              </CardHeader>
+   378→   907→              <CardContent className="space-y-4">
+   379→   908→                <div
+   380→   909→                  className={`mx-auto w-full max-w-md rounded-lg border-2 bg-white p-4 shadow-inner transition-shadow sm:p-6 ${
+   381→   910→                    peutGenerer
+   382→   911→                      ? "border-green-600 ring-2 ring-green-600/20"
+   383→   912→                      : "border-zinc-300"
+   384→   913→                  }`}
+   385→   914→                  aria-label="Aperçu de l'étiquette"
+   386→   915→                >
+   387→   916→                  {etiquette ? (
+   388→   917→                    <div className="space-y-1 text-black">
+   389→   918→                      <p className="truncate text-center text-2xl font-extrabold tracking-wide sm:text-3xl">
+   390→   919→                        {etiquette.modele}
+   391→   920→                      </p>
+   392→   921→                      <div className="flex items-baseline justify-between text-lg font-bold sm:text-xl">
+   393→   922→                        <span className="truncate">{etiquette.couleur}</span>
+   394→   923→                        <span>{etiquette.taille}</span>
+   395→   924→                      </div>
+   396→   925→                      <div className="my-2 border-t-2 border-black" aria-hidden="true" />
+   397→   926→                      <p className="text-center text-base font-bold sm:text-lg">
+   398→   927→                        {etiquette.type}
+   399→   928→                      </p>
+   400→   929→                      {etiquette.manche && (
+   401→   930→                        <p className="text-center text-sm font-semibold sm:text-base">
+   402→   931→                          {etiquette.manche}
+   403→   932→                        </p>
+   404→   933→                      )}
+   405→   934→                      <div className="mt-3 flex justify-center">
+   406→   935→                        <Ean13Svg code={etiquette.codeBarre} />
+   407→   936→                      </div>
+   408→   937→                      <p className="mt-1 text-center text-lg font-extrabold sm:text-xl">
+   409→   938→                        OF: {etiquette.of || "——"}
+   410→   939→                      </p>
+   411→   940→                    </div>
+   412→   941→                  ) : (
+   413→   942→                    <div className="flex h-48 items-center justify-center rounded text-sm text-zinc-400">
+   414→   943→                      Sélectionnez une référence pour prévisualiser l&apos;étiquette.
+   415→   944→                    </div>
+   416→   945→                  )}
+   417→   946→                </div>
+   418→   947→
+   419→   948→                {/* Table des variables (miroir de Zebra Designer) */}
+   420→   949→                {etiquette && (
+   421→   950→                  <div className="space-y-1.5">
+   422→   951→                    <div className="flex items-center justify-between gap-2">
+   423→   952→                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   424→   953→                        Variables intégrées au fichier
+   425→   954→                      </p>
+   426→   955→                      <Button
+   427→   956→                        variant="ghost"
+   428→   957→                        size="sm"
+   429→   958→                        onClick={copierValeurs}
+   430→   959→                        className="h-7 px-2 text-xs text-zinc-500 hover:text-amber-700"
+   431→   960→                        aria-label="Copier les 7 variables dans le presse-papiers"
+   432→   961→                      >
+   433→   962→                        {valeursCopiees ? (
+   434→   963→                          <Check className="mr-1 h-3.5 w-3.5 text-green-600" aria-hidden="true" />
+   435→   964→                        ) : (
+   436→   965→                          <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+   437→   966→                        )}
+   438→   967→                        {valeursCopiees ? "Copié" : "Copier"}
+   439→   968→                      </Button>
+   440→   969→                    </div>
+   441→   970→                  <div className="overflow-x-auto rounded-lg border">
+   442→   971→                    <table className="w-full text-sm">
+   443→   972→                      <caption className="sr-only">
+   444→   973→                        Variables qui seront intégrées au fichier .NLBL
+   445→   974→                      </caption>
+   446→   975→                      <tbody className="divide-y">
+   447→   976→                        {(
+   448→   977→                          [
+   449→   978→                            ["Modele", etiquette.modele],
+   450→   979→                            ["Manche", etiquette.manche || "—"],
+   451→   980→                            ["Taille", etiquette.taille],
+   452→   981→                            ["OF", etiquette.of || "—"],
+   453→   982→                            ["Couleur", etiquette.couleur],
+   454→   983→                            ["Type", etiquette.type],
+   455→   984→                            ["CodeBarre", etiquette.codeBarre],
+   456→   985→                          ] as const
+   457→   986→                        ).map(([invite, valeur]) => (
+   458→   987→                          <tr key={invite} className="hover:bg-zinc-50">
+   459→   988→                            <th
+   460→   989→                              scope="row"
+   461→   990→                              className="w-24 bg-zinc-50 px-3 py-1.5 text-left font-medium text-zinc-600"
+   462→   991→                            >
+   463→   992→                              {invite}
+   464→   993→                            </th>
+   465→   994→                            <td className="px-3 py-1.5 font-mono text-xs">
+   466→   995→                              {valeur}
+   467→   996→                            </td>
+   468→   997→                          </tr>
+   469→   998→                        ))}
+   470→   999→                      </tbody>
+   471→  1000→                    </table>
+   472→  1001→                  </div>
+   473→  1002→                  </div>
+   474→  1003→                )}
+   475→  1004→              </CardContent>
+   476→  1005→              <CardFooter className="flex flex-col gap-3 border-t bg-zinc-50/60 p-4">
+   477→  1006→                <Button
+   478→  1007→                  onClick={() =>
+   479→  1008→                    etiquette && genererNlbl([etiquette], setGenerationEnCours)
+   480→  1009→                  }
+   481→  1010→                  disabled={!peutGenerer || generationEnCours}
+   482→  1011→                  className="h-12 w-full bg-amber-600 text-base font-semibold text-white hover:bg-amber-700"
+   483→  1012→                >
+   484→  1013→                  {generationEnCours ? (
+   485→  1014→                    <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+   486→  1015→                  ) : (
+   487→  1016→                    <FileDown className="mr-2 h-5 w-5" aria-hidden="true" />
+   488→  1017→                  )}
+   489→  1018→                  {generationEnCours
+   490→  1019→                    ? "Génération en cours…"
+   491→  1020→                    : "Générer le fichier .NLBL"}
+   492→  1021→                </Button>
+   493→  1022→                <p className="text-center text-xs text-muted-foreground">
+   494→  1023→                  Les données sont intégrées au fichier : ouvrez-le dans Zebra
+   495→  1024→                  Designer et imprimez directement — aucune importation de fichier
+   496→  1025→                  texte. Astuce : raccourci clavier{" "}
+   497→  1026→                  <kbd className="rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 shadow-sm">
+   498→  1027→                    Ctrl + ⏎
+   499→  1028→                  </kbd>
+   500→  1029→                </p>
+   501→  1030→                <Separator />
+   502→  1031→                <Button
+   503→  1032→                  variant="outline"
+   504→  1033→                  onClick={exporterTxt}
+   505→  1034→                  disabled={!peutGenerer}
+   506→  1035→                  className="h-11 w-full whitespace-normal"
+   507→  1036→                >
+   508→  1037→                  <FileDown className="mr-2 h-4 w-4" aria-hidden="true" />
+   509→  1038→                  Exporter le fichier .TXT (historique)
+   510→  1039→                </Button>
+   511→  1040→              </CardFooter>
+   512→  1041→            </Card>
+   513→  1042→            </CarteAnimee>
+   514→  1043→
+   515→  1044→            {/* Historique */}
+   516→  1045→            <CarteAnimee delai={0.24}>
+   517→  1046→            <Card>
+   518→  1047→              <CardHeader className="pb-3">
+   519→  1048→                <CardTitle className="flex items-center justify-between text-base">
+   520→  1049→                  <span className="flex items-center gap-2">
+   521→  1050→                    <History className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   522→  1051→                    Dernières générations
+   523→  1052→                  </span>
+   524→  1053→                  <Button
+   525→  1054→                    variant="ghost"
+   526→  1055→                    size="icon"
+   527→  1056→                    aria-label="Rafraîchir l'historique"
+   528→  1057→                    onClick={chargerHistorique}
+   529→  1058→                    className="h-8 w-8"
+   530→  1059→                  >
+   531→  1060→                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+   532→  1061→                  </Button>
+   533→  1062→                </CardTitle>
+   534→  1063→              </CardHeader>
+   535→  1064→              <CardContent>
+   536→  1065→                {historique.length === 0 ? (
+   537→  1066→                  <p className="py-4 text-center text-sm text-muted-foreground">
+   538→  1067→                    Aucune génération enregistrée pour le moment.
+   539→  1068→                  </p>
+   540→  1069→                ) : (
+   541→  1070→                  <div className="max-h-96 overflow-y-auto rounded-lg border">
+   542→  1071→                    <ul className="divide-y">
+   543→  1072→                      {historique.map((h) => (
+   544→  1073→                        <li
+   545→  1074→                          key={h.id}
+   546→  1075→                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+   547→  1076→                        >
+   548→  1077→                          <span className="flex min-w-0 items-center gap-2">
+   549→  1078→                            <Badge
+   550→  1079→                              className={
+   551→  1080→                                h.kind === "NLBL"
+   552→  1081→                                  ? "shrink-0 bg-amber-600 text-white hover:bg-amber-600"
+   553→  1082→                                  : "shrink-0 bg-zinc-200 text-zinc-700 hover:bg-zinc-200"
+   554→  1083→                              }
+   555→  1084→                            >
+   556→  1085→                              {h.kind}
+   557→  1086→                            </Badge>
+   558→  1087→                            <span className="truncate font-mono text-xs" title={h.filename}>
+   559→  1088→                              {h.filename}
+   560→  1089→                            </span>
+   561→  1090→                          </span>
+   562→  1091→                          <span className="shrink-0 text-xs text-muted-foreground">
+   563→  1092→                            {new Date(h.createdAt).toLocaleString("fr-FR", {
+   564→  1093→                              day: "2-digit",
+   565→  1094→                              month: "2-digit",
+   566→  1095→                              hour: "2-digit",
+   567→  1096→                              minute: "2-digit",
+   568→  1097→                            })}
+   569→  1098→                          </span>
+   570→  1099→                        </li>
+   571→  1100→                      ))}
+   572→  1101→                    </ul>
+   573→  1102→                  </div>
+   574→  1103→                )}
+   575→  1104→              </CardContent>
+   576→  1105→            </Card>
+   577→  1106→            </CarteAnimee>
+   578→  1107→          </div>
+   579→  1108→
+   580→  1109→          {/* ------------------------- Statistiques (pleine largeur) ------------------------- */}
+   581→  1110→          <div className="min-w-0 lg:col-span-12">
+   582→  1111→            <CarteAnimee delai={0.32}>
+   583→  1112→            <Card>
+   584→  1113→              <CardHeader className="pb-4">
+   585→  1114→                <CardTitle className="flex items-center justify-between gap-2 text-base">
+   586→  1115→                  <span className="flex items-center gap-2">
+   587→  1116→                    <BarChart3 className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   588→  1117→                    Activité des 7 derniers jours
+   589→  1118→                  </span>
+   590→  1119→                  <Button
+   591→  1120→                    variant="ghost"
+   592→  1121→                    size="icon"
+   593→  1122→                    aria-label="Rafraîchir les statistiques"
+   594→  1123→                    onClick={chargerStats}
+   595→  1124→                    className="h-8 w-8"
+   596→  1125→                  >
+   597→  1126→                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+   598→  1127→                  </Button>
+   599→  1128→                </CardTitle>
+   600→  1129→                <CardDescription>
+   601→  1130→                  Cumuls et répartition quotidienne des fichiers générés (fuseau
+   602→  1131→                  Europe/Paris).
+   603→  1132→                </CardDescription>
+   604→  1133→              </CardHeader>
+   605→  1134→              <CardContent className="grid gap-6 md:grid-cols-3">
+   606→  1135→                {/* Indicateurs clés */}
+   607→  1136→                <div className="grid gap-3">
+   608→  1137→                  <div className="flex items-center gap-3 rounded-lg border bg-white p-3">
+   609→  1138→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+   610→  1139→                      <FileDown className="h-4 w-4" aria-hidden="true" />
+   611→  1140→                    </div>
+   612→  1141→                    <div>
+   613→  1142→                      <p className="text-xl font-bold leading-none">
+   614→  1143→                        {(stats?.totalNlbl ?? 0).toLocaleString("fr-FR")}
+   615→  1144→                      </p>
+   616→  1145→                      <p className="text-xs text-muted-foreground">fichiers .NLBL générés</p>
+   617→  1146→                    </div>
+   618→  1147→                  </div>
+   619→  1148→                  <div className="flex items-center gap-3 rounded-lg border bg-white p-3">
+   620→  1149→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+   621→  1150→                      <FileText className="h-4 w-4" aria-hidden="true" />
+   622→  1151→                    </div>
+   623→  1152→                    <div>
+   624→  1153→                      <p className="text-xl font-bold leading-none">
+   625→  1154→                        {(stats?.totalTxt ?? 0).toLocaleString("fr-FR")}
+   626→  1155→                      </p>
+   627→  1156→                      <p className="text-xs text-muted-foreground">fichiers .TXT exportés</p>
+   628→  1157→                    </div>
+   629→  1158→                  </div>
+   630→  1159→                  <div className="flex items-center gap-3 rounded-lg border bg-white p-3">
+   631→  1160→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-green-100 text-green-700">
+   632→  1161→                      <Tags className="h-4 w-4" aria-hidden="true" />
+   633→  1162→                    </div>
+   634→  1163→                    <div>
+   635→  1164→                      <p className="text-xl font-bold leading-none">
+   636→  1165→                        {(stats?.totalEtiquettes ?? 0).toLocaleString("fr-FR")}
+   637→  1166→                      </p>
+   638→  1167→                      <p className="text-xs text-muted-foreground">étiquettes prêtes à imprimer</p>
+   639→  1168→                    </div>
+   640→  1169→                  </div>
+   641→  1170→                </div>
+   642→  1171→                {/* Graphique */}
+   643→  1172→                <div className="h-56 md:col-span-2">
+   644→  1173→                  <ResponsiveContainer width="100%" height="100%">
+   645→  1174→                    <BarChart data={stats?.parJour ?? []} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+   646→  1175→                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+   647→  1176→                      <XAxis
+   648→  1177→                        dataKey="libelle"
+   649→  1178→                        tickLine={false}
+   650→  1179→                        axisLine={false}
+   651→  1180→                        fontSize={12}
+   652→  1181→                        stroke="#71717a"
+   653→  1182→                      />
+   654→  1183→                      <YAxis
+   655→  1184→                        allowDecimals={false}
+   656→  1185→                        tickLine={false}
+   657→  1186→                        axisLine={false}
+   658→  1187→                        fontSize={12}
+   659→  1188→                        stroke="#71717a"
+   660→  1189→                      />
+   661→  1190→                      <ChartTooltip
+   662→  1191→                        cursor={{ fill: "rgba(217, 119, 6, 0.07)" }}
+   663→  1192→                        contentStyle={{
+   664→  1193→                          borderRadius: 8,
+   665→  1194→                          border: "1px solid #e4e4e7",
+   666→  1195→                          fontSize: 12,
+   667→  1196→                        }}
+   668→  1197→                        formatter={(valeur, nom) => [String(valeur), nom as string]}
+   669→  1198→                      />
+   670→  1199→                      <Bar
+   671→  1200→                        dataKey="nlbl"
+   672→  1201→                        name="Fichiers .NLBL"
+   673→  1202→                        fill="#d97706"
+   674→  1203→                        radius={[4, 4, 0, 0]}
+   675→  1204→                        maxBarSize={30}
+   676→  1205→                      />
+   677→  1206→                      <Bar
+   678→  1207→                        dataKey="txt"
+   679→  1208→                        name="Fichiers .TXT"
+   680→  1209→                        fill="#d4d4d8"
+   681→  1210→                        radius={[4, 4, 0, 0]}
+   682→  1211→                        maxBarSize={30}
+   683→  1212→                      />
+   684→  1213→                    </BarChart>
+   685→  1214→                  </ResponsiveContainer>
+   686→  1215→                </div>
+   687→  1216→              </CardContent>
+   688→  1217→            </Card>
+   689→  1218→            </CarteAnimee>
+   690→  1219→          </div>
+   691→  1220→        </div>
+   692→  1221→      </main>
+   693→  1222→
+   694→  1223→      {/* Pied de page collant */}
+   695→  1224→      <footer className="mt-auto border-t border-zinc-800 bg-zinc-900 pb-[env(safe-area-inset-bottom)] text-zinc-400">
+   696→  1225→        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs">
+   697→  1226→          <span>Clément Design — Générateur d&apos;étiquettes</span>
+   698→  1227→          <span>
+   699→  1228→            Fichiers .NLBL à données intégrées · Template cLEMENT2 · Imprimante
+   700→  1229→            ZDesigner GK420d
+   701→  1230→          </span>
+   702→  1231→        </div>
+   703→  1232→      </footer>
+   704→  1233→    </div>
+   705→  1234→  );
+   706→  1235→}
+   707→  1236→

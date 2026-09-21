@@ -1,0 +1,219 @@
+    21→- Assets copiés dans src/lib/nlbl/templates/ (label.xml, solution.slnx.xml, référence .nlbl chiffrée)
+    22→- Next étape : Prisma (Article/GenerationLog) + seed 4623 articles, service zip-aes, API, UI
+    23→
+    24→---
+    25→Task ID: 2
+    26→Agent: Z.ai Code (principal)
+    27→Task: Implémentation complète du service .NLBL + page générateur + tests + vérification navigateur
+    28→
+    29→Work Log:
+    30→- Prisma : modèles Article + GenerationLog (SQLite), push OK, seed de 4623 références (191 articles) depuis prisma/articles_seed.json extrait de etiquettes.html
+    31→- src/lib/nlbl/zip-aes.ts : écrivain ZIP avec chiffrement WinZip AES-256 (AE-1) sans dépendance externe (PBKDF2-HMAC-SHA1 1000 it., CTR, HMAC-SHA1, CRC32, deflate)
+    32→- CORRECTION IMPORTANTE après débogage croisé : sel = clé/2 (16 octets pour AES-256), compteur CTR 128 bits PETIT-BOUTIEN initialisé à 1 (CTR manuel via AES-ECB), HMAC sur le chiffré SEUL — conforme au fichier original de Zebra Designer (vérifié empiriquement)
+    33→- src/lib/nlbl/validation.ts : champs obligatoires, longueurs max, clé EAN-13, caractères de contrôle, échappement XML, MAX_ETIQUETTES=100
+    34→- src/lib/nlbl/generator.ts : injection des 7 variables (DefaultValue/SampleValue du .slnx), renommage interne, .nlbl (1 étiquette) ou .zip (lot, + LISEZMOI.txt), nom horodaté Europe/Paris
+    35→- src/lib/label-data.ts : COULEURS/MANCHES/TYPES, tailleCourte/tailleLabel, sleeveAbbrev, speBarcode (hash 99…), calculerEtiquette, exportTxt (non-régression)
+    36→- API : POST /api/nlbl (binaire + Content-Disposition), GET /api/articles (4623 ref), GET/POST /api/generations (journal)
+    37→- UI page / : formulaire cascade (Article combobox 191, Couleur, Manche, Taille), OF, Type, SPE, aperçu étiquette + EAN-13 SVG + table variables miroir Zebra Designer, bouton « Générer le fichier .NLBL » (désactivé si données incomplètes, spinner, toast succès/erreur), export .TXT conservé, File d'impression (lot ≤100 → .zip), historique des générations, footer collant, responsive (fix débordement 390px : min-w-0 + whitespace-normal)
+    38→- Tests : scripts/verifier-nlbl.ts (27/27 via bun) + scripts/verifier-nlbl.py (20/20 via pyzipper = implémentation indépendante : extraction AES, XML bien formé, valeurs injectées, intégrité design octet/octet, BOM, lot .zip)
+    39→- Vérification agent-browser : parcours complet (article SFAX→NOIR→Manches courtes→T3→OF 078594→Veste), aperçu identique à la capture utilisateur, génération .NLBL (toast etiquettes_…nlbl), lot 2 étiquettes (.zip), export .TXT, footer collant, mobile 390px sans débordement
+    40→- API testée aussi via curl : erreurs explicites FR (code-barres invalide, lot vide), accents + &<> échappés correctement dans le .nlbl
+    41→- Zéro erreur dans dev.log et console navigateur ; lint propre
+    42→- Documentation : README-NLBL.md (utilisation, architecture, checklist de test manuel Zebra Designer, points d'attention)
+    43→
+    44→Stage Summary:
+    45→- Fonctionnalité livrée : bouton « Générer le fichier .NLBL » produit un fichier natif Zebra Designer 3 avec données intégrées — plus aucun import manuel
+    46→- 1 étiquette → .nlbl horodaté ; N étiquettes distinctes → .zip de N .nlbl (max 100) ; export TXT conservé
+    47→- 47 tests verts (Node 27 + Python 20) ; vérifié end-to-end dans le navigateur
+    48→- Reste à valider par l'utilisateur dans Zebra Designer réel : checklist README-NLBL.md (ouverture, pré-remplissage, code-barres, impression)
+    49→
+    50→---
+    51→Task ID: 3 (cron review — 2026-09-21 13:16 Europe/Paris)
+    52→Agent: Z.ai Code (principal)
+    53→Task: Revue automatisée — QA agent-browser, puis nouvelles fonctionnalités + finitions visuelles
+    54→
+    55→Work Log:
+    56→- QA initiale : endpoints 200 (/, /api/articles, /api/generations), lint propre, zéro erreur console, parcours vérifié dans le navigateur → projet stable
+    57→- NOUVEAU : API GET /api/stats (src/app/api/stats/route.ts) — totaux cumulés (TXT/NLBL/étiquettes) + répartition par jour sur 7 jours (fuseau Europe/Paris, grille complète même sans données)
+    58→- NOUVEAU : carte « Activité des 7 derniers jours » (pleine largeur) — 3 KPI (fichiers .NLBL, fichiers .TXT, étiquettes prêtes à imprimer) + graphique à barres recharts (NLBL ambre, TXT gris, tooltip FR, barres arrondies)
+    59→- NOUVEAU : bouton « Copier » sur la table des variables — copie les 7 variables au presse-papiers au format Clé=valeur (état Copié ✓ 2 s, gestion refus presse-papiers)
+    60→- NOUVEAU : articles récemment utilisés — chips sous le sélecteur d'article (localStorage « clement-articles-recents », max 4, dédoublonnés, chip actif surligné ambre)
+    61→- NOUVEAU : raccourci clavier Ctrl/⌘ + Entrée → génère le fichier .NLBL courant (kbd hint affiché sous le bouton) — vérifié : génération effective
+    62→- NOUVEAU : détection de doublon dans la file d'impression (même modèle + OF) → toast d'information non bloquant
+    63→- STYLING : barre dégradée ambre en haut de l'en-tête, anneau vert sur l'aperçu quand « Prêt à générer », cartes animées à l'apparition (framer-motion, cascade 0/0.08/0.16/0.24/0.32 s), scrollbars personnalisées (globals.css), kbd stylé
+    64→- Fix passager pendant édition : erreur JSX transitoire (HMR) due à un </div> déplacé — corrigée, compilation et rendu validés (5 cartes, scrollWidth 1280)
+    65→- Vérifications : 27/27 tests Node + 20/20 tests Python toujours verts ; lint propre ; mobile 390 px sans débordement ; toasts Copier/Doublon/Raccourci validés dans le navigateur ; stats rafraîchies après chaque génération
+    66→
+    67→Stage Summary:
+    68→- Application enrichie : statistiques d'activité avec graphique, presse-papiers, récents, raccourci clavier, anti-doublons + interface plus soignée (animations, dégradé, anneaux d'état)
+    69→- Service .NLBL inchangé et toujours conforme (47 tests verts) — aucune régression
+    70→- Prochaines pistes : export CSV du journal, recherche avancée (multi-critères), préférences imprimante persistées, i18n EN, authentification
+    71→
+    72→---
+    73→Task ID: 4 (cron review — 2026-09-21 13:45 Europe/Paris)
+    74→Agent: Z.ai Code (principal)
+    75→Task: Revue automatisée — QA agent-browser (projet stable), puis export CSV du journal, filtre historique, préférences persistées, aperçu agrandi + finitions visuelles
+    76→
+    77→Work Log:
+    78→- QA initiale : lint propre, 27/27 tests Node + 20/20 tests Python verts, dev.log sans erreur, parcours complet vérifié dans le navigateur (cascade ADAGIO→BLC→ML→L→OF→Veste, génération .NLBL OK, mobile 390 px sans débordement) → projet stable, aucun bug à corriger
+    79→- NOUVEAU : API GET /api/generations/export (src/app/api/generations/export/route.ts) — export CSV des 1 000 dernières entrées du journal, séparateur « ; » (convention Excel FR), BOM UTF-8 (accents corrects dans Excel), colonnes Date ;Type;Fichier;Étiquettes;Modèle;OF ; extraction Modèle/OF depuis details JSON (format TXT {modele,of} ET format lot NLBL {etiquettes:[…]}, valeurs uniques jointes « / », tronquées à 80)
+    80→- NOUVEAU : bouton « CSV » dans la carte Historique (spinner pendant l'export, toast succès/erreur, tooltip)
+    81→- NOUVEAU : filtre de recherche instantané du journal (input avec loupe, filtre sur nom de fichier ou type TXT/NLBL, message « Aucun fichier ne correspond à … »)
+    82→- NOUVEAU : derniers n° d'OF mémorisés — chips sous le champ OF (max 3, localStorage « clement-ofs-recents », dédoublonnés, mémorisation à chaque génération réussie, chip actif surligné ambre)
+    83→- NOUVEAU : type de produit mémorisé (localStorage « clement-type-defaut », restauré au chargement via choisirType)
+    84→- NOUVEAU : aperçu agrandi — bouton ⤢ sur la carte Aperçu (désactivé sans données, tooltip) ouvrant un Dialog « Vérification avant impression » avec étiquette en grand (EAN-13 moduleW=3, bordure verte si prêt)
+    85→- NOUVEAU : 4ᵉ KPI « étiquettes / jour (7 derniers jours) » — grille KPI passée en 2×2, format fr-FR (ex. « 1,7 »)
+    86→- STYLING : zone de découpe en pointillés autour de l'aperçu avec étiquette « DÉCOUPE 55 × 35 MM », ombre plus réaliste (shadow-md), tooltips sur les boutons icônes (agrandir, rafraîchir historique, rafraîchir stats, CSV), badge « ×N » ambre sur les lignes du journal en lot, hover lift + bordure colorée sur les KPI, chiffres tabular-nums, états vides illustrés (file d'impression vide avec icône + consigne, historique vide), hover zinc-50 sur les lignes du journal
+    87→- FIX passif : conteneur du graphique en overflow-hidden (un redimensionnement desktop→mobile ne provoque plus de débordement momentané du chart recharts)
+    88→- Vérifications agent-browser : génération .NLBL → toast + chip OF « 078601 » apparue ; dialog d'aperçu agrandi rendu avec code-barres élargi ; filtre « SFAX » → seule la ligne SFAX affichée ; clic CSV → toast « Journal exporté au format CSV » ; KPI 2×2 avec « 1,7 étiquettes/jour » ; mobile 390 px rechargé + resize simulé : zéro débordement
+    89→- Transitoire (non bloquant) : une erreur de parsing JSX passagère dans dev.log pendant l'édition (HMR a capturé un état intermédiaire entre 2 MultiEdit) — compilation finale propre, page 200, Fast Refresh warnings résorbés
+    90→- README-NLBL.md enrichi : nouvelle section « 🧰 Fonctions d'accompagnement » (aperçu agrandi, OF récents, type mémorisé, journal filtrable, export CSV, stats, copier, raccourci)
+    91→- Vérification finale : lint propre, 27/27 Node + 20/20 Python verts, / et /api/generations/export en 200
+    92→
+    93→Stage Summary:
+    94→- Application enrichie : traçabilité exportable (CSV Excel-ready), journal filtrable, ergonomie accélérée (OF récents, type mémorisé, aperçu agrandi), KPI de rythme (étiquettes/jour) + interface encore plus soignée (zone de découpe, tooltips, états vides, badges de lot)
+    95→- Service .NLBL inchangé et toujours conforme (47 tests verts) — aucune régression sur la fonctionnalité principale
+    96→- Prochaines pistes : préférences imprimante persistées (nom d'imprimante, dpi), i18n EN, authentification multi-utilisateurs, pagination/recherche avancée du journal (multi-critères par modèle/OF)
+    97→
+    98→---
+    99→Task ID: 5 (cron review — 2026-09-21 14:15 Europe/Paris)
+   100→Agent: Z.ai Code (principal)
+   101→Task: Revue automatisée — QA agent-browser (projet stable), puis préférences imprimante, aperçu .NLBL, journal multi-critères, aide intégrée + fix responsive
+   102→
+   103→Work Log:
+   104→- QA initiale : lint propre, 27/27 + 20/20 tests verts à l'entrée, dev.log sans erreur, parcours complet agent-browser (SFAX→NOIR→MC→T3→OF→Veste, génération .NLBL OK, toast OK) → projet STABLE, aucun bug bloquant → focus « nouvelles fonctionnalités » selon le backlog
+   105→- NOUVEAU — Préférences d'imprimante persistées : dialog engrenage dans l'en-tête (switch + input nom exact Windows avec datalist d'imprimantes ZDesigner courantes + select dpi 203/300/600 en rappel), stockage localStorage « clement-imprimante », point ambre sur l'icône quand active, footer et tooltip dynamiques
+   106→- Service : validerImprimante() (nettoyage, espaces internes normalisés, max 64, erreurs FR) + patcherImprimante() dans generator.ts — remplace <Name>, <DriverName> du bloc <Printer> ET le nom dans le DevModeBuffer (dmDeviceName WCHAR[32] UTF-16LE jusqu'à 32 caractères + occurrences ANSI des données driver à 16), TOUJOURS à longueur d'octets identique : structure DEVMODEW intacte, design inchangé octet/octet
+   107→- API : POST /api/nlbl accepte désormais { printer } (optionnel, validé) ; journalisation enrichie (imprimante dans details)
+   108→- NOUVEAU — Aperçu du contenu .NLBL : API POST /api/nlbl/preview (entrées ZIP, chiffrement, taille réelle, imprimante cible, les 7 variables, XML solution complet — sans téléchargement ni journalisation) + bouton « Contenu » (dialog : 4 tuiles résumé, table des variables, XML dépliable en pre sombre scrollable) → vérification avant impression possible sans générer
+   109→- NOUVEAU — Journal multi-critères : GET /api/generations enrichi (modele/of extraits du JSON details, lots joints « / »), chips filtre Tous/.nlbl/.txt avec effectifs, recherche instantanée étendue au modèle et au n° d'OF, ligne secondaire « Modèle · OF xxx » sur chaque entrée du journal
+   110→- NOUVEAU — Mode d'emploi intégré : dialog « ? » dans l'en-tête, 4 étapes numérotées (étiquette simple, lot, imprimante cible, ancien flux TXT) + encadré « Bon à savoir » (accents, quantité, doublons, stats)
+   111→- FIX responsive (régression introduite par les 2 boutons d'en-tête) : débordement 27 px en 390 px (rangée badges non repliable) → flex-wrap + justify-end ; scrollWidth 390 = clientWidth 390 vérifié, desktop 1280 inchangé
+   112→- Tests : scripts/verifier-nlbl.ts étendu — section 8 « Imprimante cible injectée » (24 nouveaux contrôles) : Name/DriverName/DevModeBuffer (UTF-16LE complet + ANSI), ancien nom absent, longueur base64 et octets identiques, échappement XML du nom, design intact hors bloc imprimante, polices ZEBRA 0 préservées, validation (vide/long/non-chaîne/nettoyage), aperçu (7 variables, ordre template, taille réelle), lot avec option propagée
+   113→- Vérification croisée indépendante (pyzipper, double extraction AES lot→nlbl→XML) : Name/DriverName corrects, UTF-16LE complet présent, ANSI présent, ancien nom absent — dans chaque .nlbl du .zip
+   114→- Vérifications agent-browser : dialog imprimante (activation, saisie, toast, footer dynamique), génération avec imprimante personnalisée (toast etiquettes_…nlbl), dialog Contenu (tuiles, variables OF 078610, imprimante ZD621 affichée, XML solution dépliable), journal (chips 14/13/1, recherche SFAX→5 lignes dont lot « SFAX MC · OF 078594 / 078595 », recherche 078594→4, ADAGIO+.nlbl→3), mode d'emploi rendu, mobile 390 px sans débordement
+   115→- Test end-to-end curl avec printer : HTTP 200, .nlbl déchiffré → Name = ZDesigner ZD621-203dpi ZPL, UTF16 complet True, OF injecté True
+   116→- README-NLBL.md enrichi : 3 nouvelles fonctions dans le tableau, section « Injection de l'imprimante cible » (détails DEVMODEW), 2 points de checklist manuelle + hypothèse n° 5 (imprimante)
+   117→- Vérification finale : lint propre, 51/51 Node + 20/20 Python, 5 endpoints 200, console navigateur vide, préférences persistées après reload
+   118→
+   119→Stage Summary:
+   120→- Application enrichie : préférences d'imprimante intégrées au .NLBL (design intact, DEVMODEW patché sans décalage), aperçu exact du contenu du fichier avant génération, journal multi-critères (chips + modèle/OF), mode d'emploi intégré — + fix responsive en-tête mobile
+   121→- Service .NLBL toujours conforme : 71 tests verts (51 Node + 20 Python), vérification croisée pyzipper de l'injection imprimante dans les lots
+   122→- Reste à valider sur poste réel : checklist README (ouverture avec imprimante personnalisée, impression)
+   123→- Prochaines pistes : i18n EN, authentification multi-utilisateurs, pagination du journal > 20 entrées, quantités par ligne dans la file d'impression
+   124→
+   125→---
+   126→Task ID: 6 (cron review — 2026-09-21 15:00 Europe/Paris)
+   127→Agent: Z.ai Code (principal)
+   128→Task: Revue automatisée — QA agent-browser (projet stable), puis quantités par ligne, pagination du journal, stats à période ajustable + fix bug rafraîchissement
+   129→
+   130→Work Log:
+   131→- QA initiale : lint propre, 51/51 + 20/20 tests verts à l'entrée, dev.log sans erreur, parcours complet agent-browser (FIRENZE→NOIR→MC→T1→OF→Veste, génération .NLBL OK, console vide, desktop 1280 sans débordement) → projet STABLE → focus « nouvelles fonctionnalités » (backlog Task 5)
+   132→- NOUVEAU — Quantités par ligne dans la file d'impression : stepper −/＋ compact (1-99, boutons désactivés aux bornes, valeur ambre si > 1, aria-labels) ; le nombre de FICHIERS reste inchangé (1 .nlbl par étiquette distincte, contrainte Essentials) ; les consignes de copies sont écrites dans un LISEZMOI.txt enrichi (section « QUANTITÉS DEMANDÉES (total : N copies) » avec nom exact de chaque fichier) ; libellé du bouton lot (« 1 fichier .NLBL (×4 copies) » / « archive .zip de 2 fichiers (7 copies) ») ; toast adapté (X fichiers, Y copies) ; journal : labelsCount = copies totales (badge ×7 sur l'entrée .zip)
+   133→- Service : OptionsNlbl.quantites + quantitesNormalisees() (garde-fou entier 1-99, désaligné → défaut 1) + construireLisezMoi(nomsFichiers, quantites) ; PaquetNlbl.copiesTotales ; API POST /api/nlbl accepte quantites (validation longueur/entiers 1-99, erreurs FR) + en-tête X-Label-Copies ; journalisation = copies totales
+   134→- NOUVEAU — Pagination du journal : GET /api/generations?page= (pages de 20, take 21 pour détecter la suite, total via count) → réponse { items, page, taillePage, encore, total } ; UI « X entrées affichées sur Y » + bouton « Charger plus (20 suivantes) » (spinner, masqué en fin de journal), hint quand recherche active (« la recherche porte sur les entrées chargées »)
+   135→- NOUVEAU — Stats à période ajustable : GET /api/stats?jours=7|14|30 (grille complète des N jours, défaut 7, valeurs invalides → 7) ; sélecteur dans la carte (7/14/30), titre « Activité (N derniers jours) », KPI « étiquettes / jour » divisé par N, XAxis interval adaptatif (1 pour 14 j, 4 pour 30 j) pour éviter le chevauchement des libellés ; rafraîchissement conservant la période choisie
+   136→- BUG FIX : bouton « Rafraîchir l'historique » — onClick={chargerHistorique} passait l'événement click comme paramètre page → la page 0 était AJOUTÉE à la liste existante (38 entrées affichées sur 24) → corrigé en onClick={() => chargerHistorique()} ; vérifié : 20/24 puis page 2 → 24/24, bouton masqué en fin de journal
+   137→- Tests : section 9 « Quantités de copies » (6 contrôles : défaut, somme 5+3+1=9, labelCount inchangé, invalides normalisées, fichier unique ×7, désalignées ignorées) → 57/57 Node ; croisé Python : LISEZMOI du .zip contient « ×5 copie(s) », « ×3 copie(s) », « total : 9 copies » et le nom exact etiquette_001_SFAX-MC_OF078594.nlbl
+   138→- Vérifications agent-browser : stepper (×1 → ×4, bornes désactivées), lot 1 fichier ×4 (toast « 1 étiquette ×4 », badge ×4 au journal), lot 2 fichiers ×4/×3 (bouton « archive .zip de 2 fichiers (7 copies) », entrée journal « ×7 | ….zip | FIRENZE MC · OF 078700 / 078701 »), stats 7↔30 jours (titre + KPI + 60 barres recharts, capture), pagination (seed temporaire 6+12 entrées : 20/28 page 0, 8/28 page 1, charger plus → 24/24, recherche TESTPAGE → 6 lignes), mobile 390 px sans débordement, console vide
+   139→- Nettoyage : 18 entrées de test supprimées de la base (deleteMany filename startsWith test_) — 16 entrées réelles restantes
+   140→- README-NLBL.md : 3 nouvelles lignes dans le tableau (quantités, journal paginé, stats à période ajustable), règle de validation quantités 1-99, architecture API mise à jour (?page=, ?jours=)
+   141→- Vérification finale : lint propre, 57/57 Node + 20/20 Python, 5 endpoints 200 + stats 14 jours (grille 14), dev.log propre
+   142→
+   143→Stage Summary:
+   144→- Application enrichie : quantités de copies par ligne (consignes LISEZMOI du .zip — aucune duplication de fichiers), journal paginé « Charger plus » (avec total et recherche sur entrées chargées), statistiques sur 7/14/30 jours — + correction d'un bug de rafraîchissement de l'historique (déduplication du clic)
+   145→- Service .NLBL toujours conforme : 77 tests verts (57 Node + 20 Python), croisés Python sur le LISEZMOI à quantités
+   146→- Reste à valider sur poste réel : checklist README (LISEZMOI à quantités + impression réelle des copies)
+   147→- Prochaines pistes : i18n EN, authentification multi-utilisateurs, prévisualisation PDF de l'étiquette, suppression/archivage des entrées du journal
+   148→
+   149→---
+   150→Task ID: 7 (cron review — 2026-09-21 15:30 Europe/Paris)
+   151→Agent: Z.ai Code (principal)
+   152→Task: Revue automatisée — QA agent-browser (projet stable), puis suppression d'entrées du journal, articles favoris, top modèles + mode sombre complet
+   153→
+   154→Work Log:
+   155→- QA initiale : lint propre, 57/57 Node + 20/20 Python verts à l'entrée, dev.log sans erreur, endpoints 200, parcours complet agent-browser (FIRENZE→NOIR→MC→T2→OF→Veste, génération .NLBL OK, journal 19 entrées, console vide, 1280 px sans débordement) → projet STABLE → focus « nouvelles fonctionnalités »
+   156→- Interruption en cours de session : le serveur de dev s'est arrêté (aucune erreur dans dev.log, probablement externe) → redémarré manuellement (nohup bun run dev), 200 confirmé, aucune conséquence sur le travail
+   157→- NOUVEAU — Suppression d'une entrée du journal : API DELETE /api/generations/[id] (src/app/api/generations/[id]/route.ts — 400 id manquant, 404 introuvable, 200 {ok, id}, erreurs FR) ; UI : corbeille au survol de chaque ligne (opacity-0 → group-hover:opacity-100, focus-visible accessible), AlertDialog de confirmation (nom du fichier, rappel « fichiers déjà téléchargés non affectés », spinner pendant la requête, bouton rouge), toast succès/erreur, rafraîchissement journal + stats (période courante)
+   158→- NOUVEAU — Articles favoris : localStorage « clement-articles-favoris » (max 8, toast si limite atteinte) ; étoile sur chaque ligne du combobox (stopPropagation vérifié dans le code cmdk : onSelect se déclenche sur onClick de l'item, stopPropagation empêche la sélection) — groupe « ★ Favoris » en tête de liste (CommandGroup + CommandSeparator, valeurs préfixées « fav » pour la recherche) + groupe « Tous les articles » titré ; chips « Favoris : » ambre au-dessus des « Récents : » ; sélection via chip ou groupe vérifiée, persistance après reload vérifiée
+   159→- NOUVEAU — Top modèles : GET /api/stats ajoute topModeles (5 max : {modele, fichiers, etiquettes}) calculé sur la période depuis le JSON details (TXT {modele} et NLBL {etiquettes[]}, dédoublonnage intra-entrée, tri par étiquettes puis fichiers puis locale fr) ; UI : section « 🏆 Top modèles — N derniers jours » dans la carte Activité (pleine largeur sous KPI + graphique) : rang (badge ambre pour la 1re place), nom tronqué, barre de progression dégradée ambre (min 6 %, relative au 1er), total « X ét. · Y f. » ; CardContent restructuré (space-y-6 + grille interne) — fix d'une balise </div> manquante détectée immédiatement après édition
+   160→- STYLING — Mode sombre complet : ThemeProvider (next-themes, attribute="class", defaultTheme="light", enableSystem=false, disableTransitionOnChange) dans layout.tsx ; bouton ☾/☀ dans l'en-tête (état « monte » pour éviter tout flash hydrotation) ; ~45 adaptations de couleurs dans page.tsx : fond de page zinc-950, chips/sélecteurs/tableaux/tuiles KPI/pieds de cartes en dark:bg-zinc-900, textes ambre/vert/rouge allégés (dark:text-*-400), états de survol ambre-950/40, badges du journal, dialog imprimante/contenu/aide, aperçu agrandi, zone de découpe bg-card ; graphique recharts recoloré via themeSombre (grille #3f3f46, axes #a1a1aa, tooltip zinc-950, barres TXT #52525b) ; scrollbars sombres (globals.css .dark) ; préférence mémorisée (localStorage « theme ») et conservée après reload — l'aperçu de l'étiquette reste volontairement blanc/texte noir dans les deux thèmes (simulation fidèle de l'impression)
+   161→- Tests & vérifications agent-browser : toggle sombre (classe .dark + body lab ~3 % + icône Sun), persistance thème après reload (les deux sens), favoris (épinglage → groupe ★ Favoris + chip + localStorage, sélection OK, reload conserve), suppression journal (19 → 18 entrées, toast, entrée absente, API 404 vérifiée en curl sur id inexistant), top modèles (5 lignes cohérentes avec les données, mise à jour après suppression), génération .NLBL complète en mode clair (FIRENZE→NOIR→ML→T1→OF 078900→Veste → toast + entrée journal), curl end-to-end /api/nlbl (HTTP 200, ZIP AES compress_type 99, 2 entrées XML correctes), mobile 390 px sans débordement (light + dark, scrollW 390 = clientW)
+   162→- Vérification finale : lint propre, 57/57 Node + 20/20 Python verts, endpoints 200 (/, /api/stats, /api/generations), console navigateur vide, dev.log sans erreur
+   163→- README-NLBL.md enrichi : 4 nouvelles fonctions dans le tableau (mode sombre, favoris, suppression journal, top modèles), 2 nouveaux endpoints dans l'architecture ([id]/route.ts DELETE, stats ?jours + topModeles)
+   164→
+   165→Stage Summary:
+   166→- Application enrichie : gestion complète du journal (suppression avec confirmation), favoris d'articles épinglables, classement « Top modèles » dans les statistiques, et mode sombre soigné de bout en bout (aperçu d'impression toujours blanc)
+   167→- Service .NLBL inchangé et toujours conforme : 77 tests verts (57 Node + 20 Python), curl end-to-end AES vérifié — aucune régression
+   168→- Reste à valider sur poste réel : checklist README (impression), mode sombre sur écrans réels si besoin d'ajustements de contraste
+   169→- Prochaines pistes : i18n EN, authentification multi-utilisateurs, impression directe (ZPL via navigateur), recherche avancée du catalogue (multi-critères), archivage automatique du journal
+   170→
+   171→---
+   172→Task ID: 8 (cron review — 2026-09-21 16:00 Europe/Paris)
+   173→Agent: Z.ai Code (principal)
+   174→Task: Revue automatisée — QA agent-browser (projet stable), puis recherche avancée du catalogue, vidage complet du journal + finitions visuelles (glassmorphism, effet shine, skeletons, point pulsant)
+   175→
+   176→Work Log:
+   177→- QA initiale : lint propre, 57/57 Node + 20/20 Python verts à l'entrée, dev.log sans erreur, parcours complet agent-browser (FIRENZE→NOIR→MC→T1→OF 078950→génération .NLBL OK, journal 19 entrées, console vide, desktop 1280 + mobile 390 sans débordement) → projet STABLE → focus « nouvelles fonctionnalités »
+   178→- NOUVEAU — Recherche avancée du catalogue : lien « Recherche avancée » (icône SlidersHorizontal) au-dessus du champ Article, ouvrant un dialog multi-critères — texte plein (article OU code-barres, insensible à la casse) + selects Couleur (liste complète triée avec libellés FR), Manche, Taille ; compteur de résultats formaté fr-FR (« X référence(s) trouvée(s) », mention « 50 premières affichées » au-delà du plafond MAX_RESULTATS_RECHERCHE=50) ; résultats scrollables (max-h-72, lignes article · couleur · manche + code-barres mono + badge taille) ; clic = appliquerResultatRecherche() : ferme le dialog, choisirArticle(r[0]) puis setCouleur/setManche/setTaille (états groupés React — la cascade de réinitialisation est écrasée dans le même tick) ; filtrage 100 % local sur les 4 623 références déjà chargées (useMemo, zéro appel API) ; état vide illustré ; l'état d'entrée réinitialise les critères (ouvrirRecherche)
+   179→- NOUVEAU — Vidage complet du journal : API DELETE /api/generations (deleteMany → { ok, supprimees }, erreurs FR loguées) ; icône gomme (Eraser) dans l'en-tête de la carte « Dernières générations » à côté du rafraîchissement (désactivée si journal vide ou purge en cours, tooltip, hover rouge) ; AlertDialog de confirmation avec le total exact (« Les N entrées du journal seront définitivement supprimées… fichiers déjà téléchargés non affectés »), spinner pendant la requête, onOpenChange protégé pendant la purge ; toast succès (nombre supprimé) / erreur ; rafraîchissement journal + stats (période courante) après purge
+   180→- STYLING — Finitions visuelles : en-tête sticky en glassmorphism (bg-zinc-900/90 + backdrop-blur-md + supports-[backdrop-filter]:bg-zinc-900/75) ; effet de brillance .btn-shine sur le CTA « Générer le fichier .NLBL » (pseudo-élément ::after, balayage lumineux en skew au survol, désactivé si disabled — ajouté dans globals.css avec commentaires FR) ; « Prêt à générer » avec point vert pulsant (animate-ping + noyau statique) remplaçant l'ancienne icône CheckCircle2 ; pied de page avec liseré dégradé ambre (h-px from-transparent via-amber-500/60 to-transparent) en écho au bandeau d'en-tête ; skeletons de chargement shadcn (Skeleton) : journal (3 lignes badge+2 barres+heure pendant le premier chargement uniquement — pas de flash aux rafraîchissements) et stats (4 tuiles KPI + bloc graphique pendant le premier chargement)
+   181→- Vérifications agent-browser : recherche avancée (dialog rendu, compteur 24 pour FIRENZE+NOIR, plafond 50 pour FIRENZE seul, recherche par code-barres exact 3700791711624 → 1 résultat, clic résultat → formulaire rempli Article/Couleur/Manche/Taille complet), purge (dialog avec total exact « Les 21 entrées… », confirmation → journal vide + stats à zéro + toast, API deleteMany vérifiée), génération .NLBL après purge (journal restauré, stats nlbl=1), pulse dot présent quand « Prêt à générer » (absent sinon), btn-shine + backdrop-blur présents dans le DOM, mobile 390 px sans débordement (dialog recherche 358 px < viewport), captures d'écran clair + sombre vérifiées
+   182→- Tests de non-régression : 57/57 Node + 20/20 Python toujours verts (service .NLBL inchangé), lint propre, endpoints 200, curl DELETE vérifié en bout en bout
+   183→- README-NLBL.md enrichi : 2 nouvelles lignes dans le tableau des fonctions (recherche avancée, vidage complet du journal) + architecture mise à jour (DELETE sur /api/generations)
+   184→- Journal laissé avec 1 entrée de démonstration (etiquettes_20260921_1510.nlbl — FIRENZE MC · OF 078960)
+   185→
+   186→Stage Summary:
+   187→- Application enrichie : recherche avancée multi-critères du catalogue (remplissage automatique du formulaire en un clic), vidage complet du journal avec confirmation, interface encore plus soignée (en-tête glassmorphism, balayage lumineux sur le CTA, point pulsant « Prêt à générer », liseré de pied de page, skeletons de chargement)
+   188→- Service .NLBL inchangé et toujours conforme : 77 tests verts (57 Node + 20 Python) — aucune régression
+   189→- Reste à valider sur poste réel : checklist README (impression), recherche avancée à l'usage quotidien
+   190→- Prochaines pistes : i18n EN, authentification multi-utilisateurs, impression directe (ZPL via navigateur), export/import du journal (sauvegarde), raccourcis clavier supplémentaires
+   191→
+   192→---
+   193→Task ID: 9 (cron review — 2026-09-21 16:30 Europe/Paris)
+   194→Agent: Z.ai Code (principal)
+   195→Task: Revue automatisée — QA agent-browser (projet stable), puis sauvegarde/restauration du journal (JSON), lots mémorisés (présets de file), raccourcis clavier + finitions visuelles (compteurs KPI animés, cascade du journal, ombres de défilement)
+   196→
+   197→Work Log:
+   198→- QA initiale : lint propre, 57/57 Node + 20/20 Python verts à l'entrée, dev.log sans erreur, 5 endpoints 200, parcours complet agent-browser (FIRENZE→NOIR→ML→T1→OF 078970→Veste, génération .NLBL OK + journalisée, console vide, mobile 390 px sans débordement) → projet STABLE → focus « nouvelles fonctionnalités » selon le backlog
+   199→- NOUVEAU — Sauvegarde/restauration du journal (JSON) : API GET /api/generations/backup (export complet hors pagination, enveloppe {application, version, exporteLe, total, entrees}, téléchargement horodaté journal_etiquettes_AAAAMMJJ_HHmm.json, plafond 2 000 entrées) + POST (restauration avec validation de surface par entrée : kind TXT/NLBL, filename ≤ 200, labelsCount entier ≥ 0, date ISO, id ≤ 64 ; déduplication par identifiant OU empreinte fichier+horodatage, doublons internes au fichier couverts, entrées invalides comptées « ignorées » ; retour {ajoutees, ignorees, total}) — restauration idempotente rejouable sans risque
+   200→- UI sauvegarde : 2 icônes dossier dans l'en-tête du journal (FolderDown avec spinner, FolderUp ouvrant un input file caché) ; fichier choisi → AlertDialog de confirmation (nom du fichier, nombre d'entrées, rappel anti-doublons et fichiers déjà téléchargés non affectés) → toast résultat « X ajoutée(s), Y ignorée(s) » + rafraîchissement journal + stats (période courante) ; toasts succès/erreur
+   201→- Vérifié par curl : ré-import complet → 0 ajoutées / 3 ignorées (idempotence), 2 nouvelles + 1 invalide → 2 ajoutées / 1 ignorée, entrees vide → 400 avec message FR (entrées de test supprimées ensuite, base rendue à son état)
+   202→- NOUVEAU — Lots mémorisés (présets de file d'impression) : bouton « Mémoriser le lot » dans la file (désactivé si file vide, tooltip) → dialog avec nom prérempli « Lot du JJ/MM HH:MM » (max 40 car.) + résumé (étiquettes/copies) → localStorage « clement-lots-sauvegardes » (max 10, entrées figées {etiquette calculee, quantite} — indépendant du catalogue) ; chips ambre « Lots mémorisés (N/10) » sous les actions : clic = chargement (AlertDialog « Remplacer la file ? » si file non vide avec comptes des deux côtés, sinon direct), croix = suppression (confirmation via toast), hover scale subtil, focus ring ; quantités restaurées (bornées 1-99, plafond 100 lignes) ; toasts Lot mémorisé / Lot chargé / Lot retiré ; persistance vérifiée après reload
+   203→- NOUVEAU — Raccourcis clavier : Ctrl/⌘ + K → recherche avancée (critères réinitialisés), Ctrl/⌘ + M → ajoute l'étiquette courante à la file (garde peutGenerer) ; les 2 raccourcis sont inertes quand un dialog est ouvert (garde sur les 10 états de dialog) ; indice kbd « Ctrl K / ⌘K » affiché dans le lien « Recherche avancée » (détection Mac post-hydration) ; mode d'emploi enrichi d'un encadré « Raccourcis clavier » (3 raccourcis avec kbd stylés) et de 2 nouveaux points « Bon à savoir » (lots mémorisés, sauvegarde/restauration JSON)
+   204→- STYLING — Finitions visuelles : compteurs KPI animés (nouveau composant CompteurAnime : rAF, easing cubique sortant 650 ms, format fr-FR, décimales supportées pour « étiquettes/jour », interruption propre via ref) sur les 4 tuiles ; lignes du journal en apparition en cascade (motion.li, opacity + glissement 10 px, délai 0,04 s/ligne plafonné à 0,4 s — seules les lignes nouvellement montées s'animent) ; ombres de défilement (classe CSS .scroll-shadows : astuce background-attachment local, dégradés haut/bas + variantes sombres dans globals.css) appliquées aux listes journal, file d'impression et résultats de recherche ; chips de lot avec transition d'échelle
+   205→- FIX mineur : « Exporter le fichier .TXT » rafraîchissait les stats sur 7 jours fixes — utilise désormais la période sélectionnée (chargerStats(Number(periodeStats)))
+   206→- Vérifications agent-browser : Ctrl+M ×2 (file 2 lignes), dialog mémorisation (nom par défaut « Lot du 21/09 13:30 »), chip créée + clic chip avec file non vide → AlertDialog + remplacement + toast « Lot chargé », Vider puis chip → chargement direct sans dialog, suppression chip → localStorage vide, Ctrl+K → dialog recherche avancée, bouton sauvegarde → toast + téléchargement JSON, restauration par injection de fichier (DataTransfer) → confirmation « 3 entrée(s) » → toast « Journal restauré — 0 ajoutée(s), 3 ignorée(s) » (idempotence prouvée dans l'UI), cascade + compteurs animés après génération de lot (KPI 4/0/5/0,7 conformes), lot persistant rechargé après reload, mobile 390 px sans débordement (390=390), mode sombre vérifié (chips, icônes, listes)
+   207→- Note QA : un doublon observé dans la file pendant les tests était un artefact d'automatisation (clic JS sur un nœud d'option obsolète qui a échoué silencieusement) — vérifié ensuite en clics natifs : la cascade T2 + OF 078982 fonctionne parfaitement, aucun bug applicatif
+   208→- README-NLBL.md enrichi : 3 nouvelles fonctions dans le tableau (sauvegarde/restauration JSON, lots mémorisés, raccourcis étendus) + route backup dans l'architecture
+   209→- Vérification finale : lint propre, 57/57 Node + 20/20 Python verts, 6 endpoints 200 (dont /api/generations/backup), session navigateur fraîche sans aucune erreur console, dev.log sans erreur
+   210→
+   211→Stage Summary:
+   212→- Application enrichie : sauvegarde/restauration JSON du journal (idempotente, anti-doublons), lots mémorisés rechargeables en un clic (présets de file d'impression avec quantités), raccourcis clavier Ctrl+K / Ctrl+M documentés dans l'aide — et interface encore plus soignée (compteurs KPI animés, cascade des lignes du journal, ombres de défilement sur les listes, indice kbd sur la recherche avancée)
+   213→- Service .NLBL inchangé et toujours conforme : 77 tests verts (57 Node + 20 Python) — aucune régression sur la fonctionnalité principale
+   214→- Reste à valider sur poste réel : checklist README (impression), comportement des fichiers de sauvegarde à travers mises à jour futures (version 1 de l'enveloppe JSON)
+   215→- Prochaines pistes : i18n EN, authentification multi-utilisateurs, impression directe (ZPL via navigateur), statistiques d'export de la sauvegarde (comparaison d'historiques), archivage automatique du journal
+   216→
+   217→---
+   218→Task ID: 10 (cron review — 2026-09-21 21:30 Europe/Paris, trace 1a0c38a7a8b7781d)
+   219→Agent: Z.ai Code (principal)
+   220→Task: Revue automatisée — QA agent-browser (projet stable), puis scan douchette, import .TXT historique, régénération depuis le journal + finitions visuelles (barre de progression, card-lift, tooltips)
+   221→
+   222→Work Log:
+   223→- QA initiale : lint propre, 57/57 Node + 20/20 Python verts à l'entrée, dev.log sans erreur, 5 endpoints 200, parcours complet agent-browser (SFAX→NOIR→MC→T1→OF 078910→Veste, génération .NLBL OK + toast, console vide, mobile 390 px sans débordement 390=390) → projet STABLE → focus « nouvelles fonctionnalités »
+   224→- NOUVEAU — Scan douchette : champ dédié dans la file d'impression (formulaire, icône ScanLine, police mono, bordure pointillée, indice kbd « ⏎ ») — le scanner agit comme un clavier (code + Entrée) ; à chaque validation : recherche du code exact dans les 4 623 références (r[4]) → étiquette calculée avec l'OF et le type DU formulaire → ajout file quantité 1 ; garde-fous FR : 13 chiffres, préfixe 99 = SPE non scannable (message dédié), code inconnu (avec total catalogue), OF manquant, type manquant, file pleine, doublon signalé ; champ TOUJOURS vidé après lecture (corrigé en cours de QA : les échecs gardaient la valeur et cassaient l'enchaînement des scans — le code rejeté reste visible dans le toast) ; anneau vert de confirmation 900 ms (temporisation nettoyée au démontage) ; bouton « Ajouter » pour la saisie manuelle
+   225→- NOUVEAU — Import d'un .TXT historique : bouton « Importer un .TXT » + input file caché (accept .txt, 1 Mo max) ; nouveau module pur src/lib/txt-import.ts (analyserTxtImport : normalisation CRLF/LF, blocs délimités par « Modele= », clés insensibles à la casse, ordre libre, fichiers concaténés acceptés) ; validation par bloc : champs obligatoires + EAN-13 valide (clé de contrôle) → les 7 variables reprises TELLES QUELLES sans repasser par le catalogue (fonctionne aussi pour les anciens codes SPE) ; ajout file plafonné à la place restante (100) ; toast « X ajoutée(s) — Y ignorée(s) (données invalides ou file pleine) »
+   226→- NOUVEAU — Régénération depuis le journal : API /api/nlbl journalise désormais les 7 variables (ajout de manche + type dans details.etiquettes) ; API GET /api/generations renvoie regenerable (vrai ssi chaque étiquette porte les 7 variables) + le tableau etiquettes complet uniquement si régénérable (payload maîtrisé) ; UI : icône ↺ (RotateCcw) au survol de chaque entrée .NLBL → remet toutes les étiquettes dans la file (append, quantité 1, plafond respecté) + toast « Lot remis dans la file » ; entrées anciennes (sans manche/type journalisé) : bouton désactivé avec tooltip explicatif « Détails incomplets (ancienne génération) »
+   227→- STYLING — Finitions : barre de progression du remplissage de la file en tête de carte (h-1.5, dégradé ambre → rouge à partir de 90 %, role progressbar + aria-valuenow) ; classe CSS .card-lift (globals.css : translation -2 px + ombre portée douce au survol, variante sombre, media prefers-reduced-motion pour désactiver) appliquée aux 5 cartes principales ; tooltips ajoutés sur « Ajouter l'étiquette courante » (rappel Ctrl+M), « Vider » et « Importer un .TXT » ; état vide de la file reformulé (formulaire, scan ou import)
+   228→- Mode d'emploi enrichi : 6 étapes (+ Scan douchette, + Régénération ; l'étape .TXT mentionne aussi l'import) + nouveau point « Bon à savoir » (EAN-13 valide requis pour l'import, codes SPE non scannables)
+   229→- Vérifications agent-browser : scan valide ABSOLUTE 3700791700123 → ligne « ABSOLUTE ML · Blanc · SPE+-SPE+ · OF 078920 » (abréviations conformes), file 0→1→2 (Entrée ET bouton), SPE 9999999999999 → toast « Code SPE non scannable », code inconnu → toast « Référence inconnue » (4 623 réf.), champ vidé après échec ; import TXT (injection DataTransfer) : bloc valide SFAX MC OF 078594 importé + bloc invalide ignoré (file = 1) ; génération du lot → journal entry regenerable:true ; clic ↺ → file +1, toast « 1 étiquette de « etiquettes_…nlbl » » ; anciennes entrées reg:false vérifiées côté API ; aide 6 étapes rendue ; mobile 390 px sans débordement (clair + sombre), captures desktop clair vérifiées
+   230→- Tests de non-régression : 57/57 Node + 20/20 Python verts (service .NLBL inchangé), curl POST /api/nlbl → HTTP 200, ZIP AES 2 entrées, details journalisés avec manche+type vérifiés via API (reg:true, 7 variables)
+   231→- Nettoyage : 3 entrées de test de la session supprimées du journal (etiquettes_…1543/1557/1558), journal rendu à 5 entrées ; console navigateur vide
+   232→- README-NLBL.md enrichi : 3 nouvelles fonctions dans le tableau (scan douchette, import .TXT, régénération), mode d'emploi « 6 étapes », architecture (txt-import.ts + mention 7 variables dans /api/generations)
+   233→
+   234→Stage Summary:
+   235→- Application enrichie : scan douchette (saisie continue par lecteur de codes-barres), import des anciens exports .TXT (boucle fermée avec le flux historique — ils redeviennent imprimables en .NLBL), régénération d'un lot depuis le journal en un clic — plus barre de progression de la file, élévation au survol des cartes et tooltips complétés
+   236→- Service .NLBL inchangé et conforme : 77 tests verts (57 Node + 20 Python), curl end-to-end AES vérifié — aucune régression ; la journalisation des 7 variables est rétro-compatible (anciennes entrées simplement non régénérables)
+   237→- Reste à valider sur poste réel : checklist README (impression), comportement d'une vraie douchette USB (suffixe CR attendu = touche Entrée standard)
+   238→- Prochaines pistes : i18n EN, authentification multi-utilisateurs, impression directe (ZPL via navigateur), filtrage par dates du journal, statistiques d'export comparées
+   239→

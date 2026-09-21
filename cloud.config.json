@@ -1,0 +1,35 @@
+{
+  "_lisezmoi": "FICHIER DE CONFIGURATION DE CLÉMENT DESIGN — ne jamais le communiquer aux façonniers. Il se trouve sur le serveur de l'application : il n'est jamais envoyé au navigateur. Modifiez les valeurs ci-dessous puis relancez l'application (ou attendez quelques secondes : la configuration est relue automatiquement). Champs utiles : supabaseUrl = adresse du projet Supabase ; supabaseCle = clé API du projet (sb_publishable_… ou service_role) ; secretSession = phrase secrète interne des connexions (changez-la pour déconnecter tout le monde) ; comptes = liste des accès au site (identifiant + code pour se connecter, nom affiché, rôle 'faconnier' = génération d'étiquettes uniquement, ou 'france' = accès complet réception + colisage + génération, siteId/siteLabel = nom sous lequel la production est enregistrée dans la base cloud).",
+
+  "supabaseUrl": "https://aioikwyxftyozbhismsc.supabase.co",
+  "supabaseCle": "sb_publishable_ioEq-ybjAG8gvQoMDxP8NQ_OSeq2JmG",
+
+  "secretSession": "CLD-Carros-2025-Etiquettes-Colisage-7fKq92mXvR4tP8wZ",
+
+  "comptes": [
+    {
+      "identifiant": "archipel",
+      "code": "archipel2025",
+      "nom": "Archipel",
+      "role": "faconnier",
+      "siteId": "tn-archipel",
+      "siteLabel": "Tunisie — Archipel"
+    },
+    {
+      "identifiant": "nastex",
+      "code": "nastex2025",
+      "nom": "Nastex",
+      "role": "faconnier",
+      "siteId": "tn-nastex",
+      "siteLabel": "Tunisie — Nastex"
+    },
+    {
+      "identifiant": "clement",
+      "code": "clement2025",
+      "nom": "Clément — Carros",
+      "role": "france",
+      "siteId": "france-hq",
+      "siteLabel": "France — Clément Design (Carros)"
+    }
+  ]
+}

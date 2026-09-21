@@ -1,0 +1,1512 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+     4→import { motion } from "framer-motion";
+     5→import {
+     6→  Bar,
+     7→  BarChart,
+     8→  CartesianGrid,
+     9→  ResponsiveContainer,
+    10→  Tooltip as ChartTooltip,
+    11→  XAxis,
+    12→  YAxis,
+    13→} from "recharts";
+    14→import {
+    15→  AlertTriangle,
+    16→  BarChart3,
+    17→  Check,
+    18→  CheckCircle2,
+    19→  Copy,
+    20→  FileDown,
+    21→  FileArchive,
+    22→  FileSpreadsheet,
+    23→  FileText,
+    24→  Hash,
+    25→  History,
+    26→  Layers,
+    27→  Loader2,
+    28→  Maximize2,
+    29→  Plus,
+    30→  Printer,
+    31→  RefreshCw,
+    32→  Search,
+    33→  Tags,
+    34→  Trash2,
+    35→  X,
+    36→} from "lucide-react";
+    37→
+    38→import {
+    39→  Dialog,
+    40→  DialogContent,
+    41→  DialogDescription,
+    42→  DialogHeader,
+    43→  DialogTitle,
+    44→} from "@/components/ui/dialog";
+    45→import {
+    46→  Tooltip,
+    47→  TooltipContent,
+    48→  TooltipProvider,
+    49→  TooltipTrigger,
+    50→} from "@/components/ui/tooltip";
+    51→
+    52→import { Badge } from "@/components/ui/badge";
+    53→import { Button } from "@/components/ui/button";
+    54→import {
+    55→  Card,
+    56→  CardContent,
+    57→  CardDescription,
+    58→  CardFooter,
+    59→  CardHeader,
+    60→  CardTitle,
+    61→} from "@/components/ui/card";
+    62→import {
+    63→  Command,
+    64→  CommandEmpty,
+    65→  CommandGroup,
+    66→  CommandInput,
+    67→  CommandItem,
+    68→  CommandList,
+    69→} from "@/components/ui/command";
+    70→import { Input } from "@/components/ui/input";
+    71→import { Label } from "@/components/ui/label";
+    72→import {
+    73→  Popover,
+    74→  PopoverContent,
+    75→  PopoverTrigger,
+    76→} from "@/components/ui/popover";
+    77→import {
+    78→  Select,
+    79→  SelectContent,
+    80→  SelectItem,
+    81→  SelectTrigger,
+    82→  SelectValue,
+    83→} from "@/components/ui/select";
+    84→import { Separator } from "@/components/ui/separator";
+    85→import { Switch } from "@/components/ui/switch";
+    86→import { useToast } from "@/hooks/use-toast";
+    87→import { Ean13Svg, ean13Valide } from "@/components/ean13-svg";
+    88→import {
+    89→  calculerEtiquette,
+    90→  couleurLabel,
+    91→  exportTxt,
+    92→  mancheLabel,
+    93→  speBarcode,
+    94→  tailleLabel,
+    95→  TYPES,
+    96→  type EtiquetteCalculee,
+    97→  type RecordRef,
+    98→} from "@/lib/label-data";
+    99→import { MAX_ETIQUETTES } from "@/lib/nlbl/validation";
+   100→
+   101→interface FileHistorique {
+   102→  id: string;
+   103→  kind: string;
+   104→  filename: string;
+   105→  labelsCount: number;
+   106→  createdAt: string;
+   107→}
+   108→
+   109→interface FileAttenteItem {
+   110→  id: string;
+   111→  etiquette: EtiquetteCalculee;
+   112→  ref: string;
+   113→}
+   114→
+   115→interface JourStat {
+   116→  jour: string;
+   117→  libelle: string;
+   118→  txt: number;
+   119→  nlbl: number;
+   120→  etiquettes: number;
+   121→}
+   122→
+   123→interface StatsApi {
+   124→  totalTxt: number;
+   125→  totalNlbl: number;
+   126→  totalEtiquettes: number;
+   127→  semaineTxt: number;
+   128→  semaineNlbl: number;
+   129→  semaineEtiquettes: number;
+   130→  parJour: JourStat[];
+   131→}
+   132→
+   133→/** Carte animée à l'apparition (entrées douces en cascade). */
+   134→function CarteAnimee({
+   135→  children,
+   136→  delai = 0,
+   137→}: {
+   138→  children: React.ReactNode;
+   139→  delai?: number;
+   140→}) {
+   141→  return (
+   142→    <motion.div
+   143→      initial={{ opacity: 0, y: 14 }}
+   144→      animate={{ opacity: 1, y: 0 }}
+   145→      transition={{ duration: 0.4, delay: delai, ease: "easeOut" }}
+   146→    >
+   147→      {children}
+   148→    </motion.div>
+   149→  );
+   150→}
+   151→
+   152→/** Télécharge un blob côté navigateur. */
+   153→function telecharger(blob: Blob, filename: string) {
+   154→  const url = URL.createObjectURL(blob);
+   155→  const a = document.createElement("a");
+   156→  a.href = url;
+   157→  a.download = filename;
+   158→  document.body.appendChild(a);
+   159→  a.click();
+   160→  document.body.removeChild(a);
+   161→  URL.revokeObjectURL(url);
+   162→}
+   163→
+   164→export default function GenerateurEtiquettes() {
+   165→  const { toast } = useToast();
+   166→
+   167→  // ----- Catalogue -----
+   168→  const [records, setRecords] = useState<RecordRef[]>([]);
+   169→  const [chargementCatalogue, setChargementCatalogue] = useState(true);
+   170→  const [erreurCatalogue, setErreurCatalogue] = useState<string | null>(null);
+   171→
+   172→  // ----- Sélection courante -----
+   173→  const [article, setArticle] = useState("");
+   174→  const [couleur, setCouleur] = useState("");
+   175→  const [manche, setManche] = useState("");
+   176→  const [taille, setTaille] = useState("");
+   177→  const [of, setOf] = useState("");
+   178→  const [typeValue, setTypeValue] = useState("");
+   179→  const [spe, setSpe] = useState(false);
+   180→  const [articleOuvert, setArticleOuvert] = useState(false);
+   181→
+   182→  // ----- Génération / file / historique -----
+   183→  const [generationEnCours, setGenerationEnCours] = useState(false);
+   184→  const [lotEnCours, setLotEnCours] = useState(false);
+   185→  const [fileAttente, setFileAttente] = useState<FileAttenteItem[]>([]);
+   186→  const [historique, setHistorique] = useState<FileHistorique[]>([]);
+   187→  const [stats, setStats] = useState<StatsApi | null>(null);
+   188→  const [articlesRecents, setArticlesRecents] = useState<string[]>([]);
+   189→  const [ofsRecents, setOfsRecents] = useState<string[]>([]);
+   190→  const [valeursCopiees, setValeursCopiees] = useState(false);
+   191→
+   192→  // Filtre de recherche du journal + état export CSV + aperçu agrandi
+   193→  const [rechercheHisto, setRechercheHisto] = useState("");
+   194→  const [csvEnCours, setCsvEnCours] = useState(false);
+   195→  const [apercuGrand, setApercuGrand] = useState(false);
+   196→  const compteurRef = useRef(0);
+   197→
+   198→  // -------------------------------------------------------------------------
+   199→  // Chargement du catalogue
+   200→  // -------------------------------------------------------------------------
+   201→  const chargerCatalogue = useCallback(async () => {
+   202→    setChargementCatalogue(true);
+   203→    setErreurCatalogue(null);
+   204→    try {
+   205→      const res = await fetch("/api/articles", { cache: "no-store" });
+   206→      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+   207→      const data = await res.json();
+   208→      setRecords(data.records ?? []);
+   209→    } catch (e) {
+   210→      setErreurCatalogue(
+   211→        e instanceof Error ? e.message : "Chargement du catalogue impossible."
+   212→      );
+   213→    } finally {
+   214→      setChargementCatalogue(false);
+   215→    }
+   216→  }, []);
+   217→
+   218→  const chargerHistorique = useCallback(async () => {
+   219→    try {
+   220→      const res = await fetch("/api/generations", { cache: "no-store" });
+   221→      if (!res.ok) return;
+   222→      const data = await res.json();
+   223→      setHistorique(data.items ?? []);
+   224→    } catch {
+   225→      // silencieux : l'historique ne doit pas bloquer l'utilisateur
+   226→    }
+   227→  }, []);
+   228→
+   229→  const chargerStats = useCallback(async () => {
+   230→    try {
+   231→      const res = await fetch("/api/stats", { cache: "no-store" });
+   232→      if (!res.ok) return;
+   233→      setStats(await res.json());
+   234→    } catch {
+   235→      // silencieux : les statistiques ne doivent pas bloquer l'utilisateur
+   236→    }
+   237→  }, []);
+   238→
+   239→  // Préférences mémorisées localement : articles récents, derniers OF, type par défaut
+   240→  useEffect(() => {
+   241→    try {
+   242→      setArticlesRecents(JSON.parse(localStorage.getItem("clement-articles-recents") ?? "[]"));
+   243→      setOfsRecents(JSON.parse(localStorage.getItem("clement-ofs-recents") ?? "[]"));
+   244→      const typeMemoire = localStorage.getItem("clement-type-defaut");
+   245→      if (typeMemoire && TYPES.some((t) => t.value === typeMemoire)) {
+   246→        setTypeValue(typeMemoire);
+   247→      }
+   248→    } catch {
+   249→      setArticlesRecents([]);
+   250→      setOfsRecents([]);
+   251→    }
+   252→  }, []);
+   253→
+   254→  useEffect(() => {
+   255→    chargerCatalogue();
+   256→    chargerHistorique();
+   257→    chargerStats();
+   258→  }, [chargerCatalogue, chargerHistorique, chargerStats]);
+   259→
+   260→  // -------------------------------------------------------------------------
+   261→  // Listes dérivées (logique de cascade identique à l'application d'origine)
+   262→  // -------------------------------------------------------------------------
+   263→  const articles = useMemo(
+   264→    () => [...new Set(records.map((r) => r[0]))].sort(),
+   265→    [records]
+   266→  );
+   267→
+   268→  const couleursList = useMemo(() => {
+   269→    if (!article) return [];
+   270→    return [...new Set(records.filter((r) => r[0] === article).map((r) => r[1]))];
+   271→  }, [records, article]);
+   272→
+   273→  const manchesList = useMemo(() => {
+   274→    if (!article || !couleur) return [];
+   275→    return [
+   276→      ...new Set(
+   277→        records
+   278→          .filter((r) => r[0] === article && r[1] === couleur && r[3])
+   279→          .map((r) => r[3])
+   280→      ),
+   281→    ];
+   282→  }, [records, article, couleur]);
+   283→
+   284→  const mancheApplicable = spe ? true : manchesList.length > 0;
+   285→
+   286→  const toutesTailles = useMemo(
+   287→    () => [...new Set(records.map((r) => r[2]))],
+   288→    [records]
+   289→  );
+   290→
+   291→  const taillesList = useMemo(() => {
+   292→    if (!article || !couleur) return [];
+   293→    if (spe) return toutesTailles; // mode SPE : taille libre
+   294→    if (mancheApplicable && manche) {
+   295→      return [
+   296→        ...new Set(
+   297→          records
+   298→            .filter((r) => r[0] === article && r[1] === couleur && r[3] === manche)
+   299→            .map((r) => r[2])
+   300→        ),
+   301→      ];
+   302→    }
+   303→    if (mancheApplicable) return [];
+   304→    return [
+   305→      ...new Set(
+   306→        records.filter((r) => r[0] === article && r[1] === couleur).map((r) => r[2])
+   307→      ),
+   308→    ];
+   309→  }, [records, article, couleur, manche, mancheApplicable, spe, toutesTailles]);
+   310→
+   311→  // ----- Enregistrement courant (réel ou synthétique en mode SPE) -----
+   312→  const record = useMemo<RecordRef | null>(() => {
+   313→    if (spe) {
+   314→      if (!article || !couleur || !taille) return null;
+   315→      const code = speBarcode(article, couleur, manche, taille, of.trim());
+   316→      return [article, couleur, taille, manche, code];
+   317→    }
+   318→    if (!article || !couleur || !taille) return null;
+   319→    if (mancheApplicable && !manche) return null;
+   320→    return (
+   321→      records.find(
+   322→        (r) =>
+   323→          r[0] === article &&
+   324→          r[1] === couleur &&
+   325→          r[2] === taille &&
+   326→          (!mancheApplicable || r[3] === manche)
+   327→      ) ?? null
+   328→    );
+   329→  }, [records, article, couleur, taille, manche, mancheApplicable, spe, of]);
+   330→
+   331→  const etiquette = useMemo(
+   332→    () => calculerEtiquette({ record, of, typeValue, spe }),
+   333→    [record, of, typeValue, spe]
+   334→  );
+   335→
+   336→  const peutGenerer =
+   337→    !!etiquette && of.trim().length > 0 && ean13Valide(etiquette.codeBarre);
+   338→
+   339→  // ----- Champs manquants (aide contextuelle) -----
+   340→  const champsManquants = useMemo(() => {
+   341→    const manquants: string[] = [];
+   342→    if (!article) manquants.push("article");
+   343→    if (!couleur) manquants.push("couleur");
+   344→    if (mancheApplicable && !manche && !spe) manquants.push("manche");
+   345→    if (!taille) manquants.push("taille");
+   346→    if (!of.trim()) manquants.push("n° d'OF");
+   347→    if (!typeValue) manquants.push("type de produit");
+   348→    return manquants;
+   349→  }, [article, couleur, manche, mancheApplicable, taille, of, typeValue, spe]);
+   350→
+   351→  // Journal filtré par la recherche locale (nom de fichier ou type TXT/NLBL)
+   352→  const historiqueFiltre = useMemo(() => {
+   353→    const q = rechercheHisto.trim().toLowerCase();
+   354→    if (!q) return historique;
+   355→    return historique.filter(
+   356→      (h) =>
+   357→        h.filename.toLowerCase().includes(q) || h.kind.toLowerCase().includes(q)
+   358→    );
+   359→  }, [historique, rechercheHisto]);
+   360→
+   361→  // -------------------------------------------------------------------------
+   362→  // Handlers de sélection (réinitialisations en cascade)
+   363→  // -------------------------------------------------------------------------
+   364→  const choisirArticle = (v: string) => {
+   365→    setArticle(v);
+   366→    setArticleOuvert(false);
+   367→    setCouleur("");
+   368→    setManche("");
+   369→    setTaille("");
+   370→    // Mémorise l'article dans les récents (max 4, dédoublonné)
+   371→    setArticlesRecents((prev) => {
+   372→      const suivant = [v, ...prev.filter((x) => x !== v)].slice(0, 4);
+   373→      try {
+   374→        localStorage.setItem("clement-articles-recents", JSON.stringify(suivant));
+   375→      } catch {
+   376→        // stockage indisponible : sans conséquence
+   377→      }
+   378→      return suivant;
+   379→    });
+   380→  };
+   381→  const choisirCouleur = (v: string) => {
+   382→    setCouleur(v);
+   383→    setManche("");
+   384→    setTaille("");
+   385→  };
+   386→  const changerSpe = (v: boolean) => {
+   387→    setSpe(v);
+   388→    setManche("");
+   389→    setTaille("");
+   390→  };
+   391→
+   392→  /** Mémorise les n° d'OF utilisés (max 3, dédoublonnés) pour les proposer en chips. */
+   393→  const memoriserOfs = useCallback((ofs: string[]) => {
+   394→    const valides = [...new Set(ofs.map((o) => o.trim()).filter(Boolean))];
+   395→    if (valides.length === 0) return;
+   396→    setOfsRecents((prev) => {
+   397→      const suivant = [...new Set([...valides, ...prev])].slice(0, 3);
+   398→      try {
+   399→        localStorage.setItem("clement-ofs-recents", JSON.stringify(suivant));
+   400→      } catch {
+   401→        // stockage indisponible : sans conséquence
+   402→      }
+   403→      return suivant;
+   404→    });
+   405→  }, []);
+   406→
+   407→  /** Sélectionne un type et le mémorise comme choix par défaut. */
+   408→  const choisirType = (v: string) => {
+   409→    setTypeValue(v);
+   410→    try {
+   411→      localStorage.setItem("clement-type-defaut", v);
+   412→    } catch {
+   413→      // stockage indisponible : sans conséquence
+   414→    }
+   415→  };
+   416→  const reinitialiser = () => {
+   417→    setArticle("");
+   418→    setCouleur("");
+   419→    setManche("");
+   420→    setTaille("");
+   421→    setOf("");
+   422→    setTypeValue("");
+   423→    setSpe(false);
+   424→  };
+   425→
+   426→  // -------------------------------------------------------------------------
+   427→  // Génération .NLBL / export .TXT / file d'impression
+   428→  // -------------------------------------------------------------------------
+   429→  const genererNlbl = useCallback(
+   430→    async (etiquettes: EtiquetteCalculee[], enCours: (v: boolean) => void) => {
+   431→      enCours(true);
+   432→      try {
+   433→        const res = await fetch("/api/nlbl", {
+   434→          method: "POST",
+   435→          headers: { "Content-Type": "application/json" },
+   436→          body: JSON.stringify({ labels: etiquettes }),
+   437→        });
+   438→        if (!res.ok) {
+   439→          const data = await res.json().catch(() => null);
+   440→          throw new Error(
+   441→            data?.error ?? `Le serveur a renvoyé une erreur (${res.status}).`
+   442→          );
+   443→        }
+   444→        const blob = await res.blob();
+   445→        const disposition = res.headers.get("Content-Disposition") ?? "";
+   446→        const filename =
+   447→          /filename="([^"]+)"/.exec(disposition)?.[1] ?? "etiquettes.nlbl";
+   448→        const count = Number(res.headers.get("X-Label-Count") ?? etiquettes.length);
+   449→        const mode = res.headers.get("X-Label-Mode") ?? "nlbl";
+   450→
+   451→        telecharger(blob, filename);
+   452→        memoriserOfs(etiquettes.map((e) => e.of));
+   453→        toast({
+   454→          title: "Fichier .NLBL généré",
+   455→          description: `${filename} — ${count} étiquette${count > 1 ? "s" : ""}${
+   456→            mode === "zip" ? " (archive zip)" : ""
+   457→          }. Ouvrez-le dans Zebra Designer : les données sont déjà intégrées.`,
+   458→        });
+   459→        chargerHistorique();
+   460→        chargerStats();
+   461→      } catch (e) {
+   462→        toast({
+   463→          variant: "destructive",
+   464→          title: "Échec de la génération .NLBL",
+   465→          description: e instanceof Error ? e.message : "Erreur inconnue.",
+   466→        });
+   467→      } finally {
+   468→        enCours(false);
+   469→      }
+   470→    },
+   471→    [toast, chargerHistorique, chargerStats, memoriserOfs]
+   472→  );
+   473→
+   474→  // Raccourci clavier : Ctrl/⌘ + Entrée → générer le fichier .NLBL courant
+   475→  useEffect(() => {
+   476→    const gestionnaire = (e: KeyboardEvent) => {
+   477→      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+   478→        e.preventDefault();
+   479→        if (peutGenerer && !generationEnCours && etiquette) {
+   480→          genererNlbl([etiquette], setGenerationEnCours);
+   481→        }
+   482→      }
+   483→    };
+   484→    window.addEventListener("keydown", gestionnaire);
+   485→    return () => window.removeEventListener("keydown", gestionnaire);
+   486→  }, [peutGenerer, generationEnCours, etiquette, genererNlbl]);
+   487→
+   488→  // Copie des 7 variables dans le presse-papiers (format identique à l'export TXT)
+   489→  const copierValeurs = useCallback(async () => {
+   490→    if (!etiquette) return;
+   491→    try {
+   492→      await navigator.clipboard.writeText(exportTxt(etiquette));
+   493→      setValeursCopiees(true);
+   494→      window.setTimeout(() => setValeursCopiees(false), 2000);
+   495→      toast({
+   496→        title: "Valeurs copiées",
+   497→        description: "Les 7 variables sont dans le presse-papiers (format Clé=valeur).",
+   498→      });
+   499→    } catch {
+   500→      toast({
+   501→        variant: "destructive",
+   502→        title: "Copie impossible",
+   503→        description: "Le navigateur a refusé l'accès au presse-papiers.",
+   504→      });
+   505→    }
+   506→  }, [etiquette, toast]);
+   507→
+   508→  const exporterTxt = useCallback(() => {
+   509→    if (!etiquette) return;
+   510→    const content = exportTxt(etiquette);
+   511→    const safe = (s: string) => String(s).replace(/[^a-zA-Z0-9_-]+/g, "_");
+   512→    const filename = `etiquette_${safe(article)}_${safe(couleur)}_${safe(taille)}_${safe(of)}.txt`;
+   513→    telecharger(
+   514→      new Blob([content], { type: "text/plain;charset=utf-8" }),
+   515→      filename
+   516→    );
+   517→    // Journalisation (n'empêche pas le téléchargement si elle échoue)
+   518→    fetch("/api/generations", {
+   519→      method: "POST",
+   520→      headers: { "Content-Type": "application/json" },
+   521→      body: JSON.stringify({
+   522→        kind: "TXT",
+   523→        filename,
+   524→        labelsCount: 1,
+   525→        details: JSON.stringify({ modele: etiquette.modele, of: etiquette.of }),
+   526→      }),
+   527→    })
+   528→      .then(() => {
+   529→        chargerHistorique();
+   530→        chargerStats();
+   531→      })
+   532→      .catch(() => undefined);
+   533→    toast({
+   534→      title: "Fichier .TXT exporté",
+   535→      description: `${filename} — format historique « Charger… » de Zebra Designer conservé.`,
+   536→    });
+   537→  }, [etiquette, article, couleur, taille, of, toast, chargerHistorique, chargerStats]);
+   538→
+   539→  const ajouterALaFile = () => {
+   540→    if (!etiquette) return;
+   541→    if (fileAttente.length >= MAX_ETIQUETTES) {
+   542→      toast({
+   543→        variant: "destructive",
+   544→        title: "File d'impression pleine",
+   545→        description: `Maximum ${MAX_ETIQUETTES} étiquettes par lot.`,
+   546→      });
+   547→      return;
+   548→    }
+   549→    // Avertissement amical si une étiquette identique (modèle + OF) est déjà dans la file
+   550→    const doublon = fileAttente.some(
+   551→      (f) => f.etiquette.modele === etiquette.modele && f.etiquette.of === etiquette.of
+   552→    );
+   553→    if (doublon) {
+   554→      toast({
+   555→        title: "Étiquette déjà présente dans la file",
+   556→        description: `« ${etiquette.modele} — OF ${etiquette.of} » y figure déjà. Pour N copies identiques, un seul fichier suffit : réglez la quantité dans Zebra Designer.`,
+   557→      });
+   558→    }
+   559→    compteurRef.current += 1;
+   560→    setFileAttente((q) => [
+   561→      ...q,
+   562→      {
+   563→        id: `q-${Date.now()}-${compteurRef.current}`,
+   564→        etiquette,
+   565→        ref: `${etiquette.modele} · ${etiquette.couleur} · ${etiquette.taille} · OF ${etiquette.of}`,
+   566→      },
+   567→    ]);
+   568→  };
+   569→
+   570→  // Export du journal complet au format CSV (colonne Modèle / OF incluses)
+   571→  const exporterCsv = useCallback(async () => {
+   572→    setCsvEnCours(true);
+   573→    try {
+   574→      const res = await fetch("/api/generations/export", { cache: "no-store" });
+   575→      if (!res.ok) {
+   576→        throw new Error(`Le serveur a renvoyé une erreur (${res.status}).`);
+   577→      }
+   578→      const blob = await res.blob();
+   579→      const disposition = res.headers.get("Content-Disposition") ?? "";
+   580→      const filename =
+   581→        /filename="([^"]+)"/.exec(disposition)?.[1] ?? "journal_generations.csv";
+   582→      telecharger(blob, filename);
+   583→      toast({
+   584→        title: "Journal exporté au format CSV",
+   585→        description: `${filename} — séparateur « ; », accents préservés (Excel).`,
+   586→      });
+   587→    } catch (e) {
+   588→      toast({
+   589→        variant: "destructive",
+   590→        title: "Échec de l'export CSV",
+   591→        description: e instanceof Error ? e.message : "Erreur inconnue.",
+   592→      });
+   593→    } finally {
+   594→      setCsvEnCours(false);
+   595→    }
+   596→  }, [toast]);
+   597→
+   598→  const genererLot = () => {
+   599→    if (fileAttente.length === 0) return;
+   600→    genererNlbl(
+   601→      fileAttente.map((f) => f.etiquette),
+   602→      setLotEnCours
+   603→    );
+   604→  };
+   605→
+   606→  // -------------------------------------------------------------------------
+   607→  // Rendu
+   608→  // -------------------------------------------------------------------------
+   609→  return (
+   610→    <div className="flex min-h-screen flex-col bg-zinc-100">
+   611→      {/* En-tête */}
+   612→      <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-900 text-white shadow-sm">
+   613→        <div className="h-1 w-full bg-gradient-to-r from-amber-700 via-amber-400 to-amber-700" aria-hidden="true" />
+   614→        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+   615→          <div className="flex items-center gap-3">
+   616→            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-600">
+   617→              <Tags className="h-5 w-5" aria-hidden="true" />
+   618→            </div>
+   619→            <div>
+   620→              <p className="text-xs uppercase tracking-wider text-zinc-400">
+   621→                Clément Design
+   622→              </p>
+   623→              <h1 className="text-lg font-bold leading-tight">
+   624→                Générateur d&apos;étiquettes
+   625→              </h1>
+   626→            </div>
+   627→          </div>
+   628→          <div className="flex items-center gap-2">
+   629→            <Badge
+   630→              variant="outline"
+   631→              className="border-zinc-700 bg-zinc-800 text-zinc-300"
+   632→            >
+   633→              {chargementCatalogue
+   634→                ? "Catalogue…"
+   635→                : `${records.length.toLocaleString("fr-FR")} références`}
+   636→            </Badge>
+   637→            <Badge className="bg-amber-600 text-white hover:bg-amber-600">
+   638→              Zebra Designer Essentials 3
+   639→            </Badge>
+   640→          </div>
+   641→        </div>
+   642→      </header>
+   643→
+   644→      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
+   645→        {erreurCatalogue && (
+   646→          <Card className="mb-6 border-red-300 bg-red-50">
+   647→            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+   648→              <div className="flex items-center gap-2 text-sm text-red-800">
+   649→                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+   650→                Impossible de charger le catalogue : {erreurCatalogue}
+   651→              </div>
+   652→              <Button size="sm" variant="outline" onClick={chargerCatalogue}>
+   653→                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+   654→                Réessayer
+   655→              </Button>
+   656→            </CardContent>
+   657→          </Card>
+   658→        )}
+   659→
+   660→        <div className="grid gap-6 lg:grid-cols-12">
+   661→          {/* ------------------------- Colonne gauche ------------------------- */}
+   662→          <div className="min-w-0 space-y-6 lg:col-span-7">
+   663→            {/* Formulaire */}
+   664→            <CarteAnimee delai={0}>
+   665→            <Card>
+   666→              <CardHeader className="pb-4">
+   667→                <CardTitle className="flex items-center gap-2 text-base">
+   668→                  <Printer className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   669→                  Référence à étiqueter
+   670→                </CardTitle>
+   671→                <CardDescription>
+   672→                  Sélectionnez l&apos;article, la couleur, la taille, puis saisissez
+   673→                  l&apos;OF et le type de produit.
+   674→                </CardDescription>
+   675→              </CardHeader>
+   676→              <CardContent className="space-y-4">
+   677→                {/* Article (liste avec recherche) */}
+   678→                <div className="space-y-2">
+   679→                  <Label htmlFor="article">Article</Label>
+   680→                  <Popover open={articleOuvert} onOpenChange={setArticleOuvert}>
+   681→                    <PopoverTrigger asChild>
+   682→                      <Button
+   683→                        id="article"
+   684→                        variant="outline"
+   685→                        role="combobox"
+   686→                        aria-expanded={articleOuvert}
+   687→                        className="h-11 w-full justify-between font-normal"
+   688→                        disabled={chargementCatalogue}
+   689→                      >
+   690→                        <span className={article ? "" : "text-muted-foreground"}>
+   691→                          {article || "Rechercher un article…"}
+   692→                        </span>
+   693→                        <svg
+   694→                          className="h-4 w-4 opacity-50"
+   695→                          viewBox="0 0 24 24"
+   696→                          fill="none"
+   697→                          stroke="currentColor"
+   698→                          strokeWidth="2"
+   699→                          aria-hidden="true"
+   700→                        >
+   701→                          <path d="m7 15 5 5 5-5M7 9l5-5 5 5" />
+   702→                        </svg>
+   703→                      </Button>
+   704→                    </PopoverTrigger>
+   705→                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+   706→                      <Command>
+   707→                        <CommandInput placeholder="Rechercher un article…" />
+   708→                        <CommandList>
+   709→                          <CommandEmpty>Aucun article trouvé.</CommandEmpty>
+   710→                          <CommandGroup>
+   711→                            {articles.map((a) => (
+   712→                              <CommandItem
+   713→                                key={a}
+   714→                                value={a}
+   715→                                onSelect={() => choisirArticle(a)}
+   716→                              >
+   717→                                <CheckCircle2
+   718→                                  className={`mr-2 h-4 w-4 ${
+   719→                                    a === article
+   720→                                      ? "opacity-100 text-amber-600"
+   721→                                      : "opacity-0"
+   722→                                  }`}
+   723→                                  aria-hidden="true"
+   724→                                />
+   725→                                {a}
+   726→                              </CommandItem>
+   727→                            ))}
+   728→                          </CommandGroup>
+   729→                        </CommandList>
+   730→                      </Command>
+   731→                    </PopoverContent>
+   732→                  </Popover>
+   733→                  {/* Articles récemment utilisés */}
+   734→                  {articlesRecents.length > 0 && (
+   735→                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+   736→                      <span className="text-xs text-muted-foreground">Récents :</span>
+   737→                      {articlesRecents.map((a) => (
+   738→                        <button
+   739→                          key={a}
+   740→                          type="button"
+   741→                          onClick={() => choisirArticle(a)}
+   742→                          className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:border-amber-500 hover:bg-amber-50 hover:text-amber-800 ${
+   743→                            a === article
+   744→                              ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
+   745→                              : "border-zinc-200 bg-white text-zinc-600"
+   746→                          }`}
+   747→                        >
+   748→                          {a}
+   749→                        </button>
+   750→                      ))}
+   751→                    </div>
+   752→                  )}
+   753→                </div>
+   754→
+   755→                {/* Couleur / Manche / Taille */}
+   756→                <div className="grid gap-4 sm:grid-cols-3">
+   757→                  <div className="space-y-2">
+   758→                    <Label htmlFor="couleur">Couleur</Label>
+   759→                    <Select
+   760→                      value={couleur}
+   761→                      onValueChange={choisirCouleur}
+   762→                      disabled={!article}
+   763→                    >
+   764→                      <SelectTrigger id="couleur" className="h-11 w-full">
+   765→                        <SelectValue placeholder={article ? "Choisir…" : "—"} />
+   766→                      </SelectTrigger>
+   767→                      <SelectContent>
+   768→                        {couleursList.map((c) => (
+   769→                          <SelectItem key={c} value={c}>
+   770→                            {c} — {couleurLabel(c)[0]}
+   771→                          </SelectItem>
+   772→                        ))}
+   773→                      </SelectContent>
+   774→                    </Select>
+   775→                  </div>
+   776→
+   777→                  <div className="space-y-2">
+   778→                    <Label htmlFor="manche">Manche</Label>
+   779→                    <Select
+   780→                      value={manche}
+   781→                      onValueChange={setManche}
+   782→                      disabled={!article || !couleur || !mancheApplicable}
+   783→                    >
+   784→                      <SelectTrigger id="manche" className="h-11 w-full">
+   785→                        <SelectValue
+   786→                          placeholder={mancheApplicable ? "Choisir…" : "Sans objet"}
+   787→                        />
+   788→                      </SelectTrigger>
+   789→                      <SelectContent>
+   790→                        {(spe ? ["Longues / Long", "Courtes / Short", "3/4 / 3/4"] : manchesList).map(
+   791→                          (m) => (
+   792→                            <SelectItem key={m} value={m}>
+   793→                              {mancheLabel(m)?.[0] ?? m}
+   794→                            </SelectItem>
+   795→                          )
+   796→                        )}
+   797→                      </SelectContent>
+   798→                    </Select>
+   799→                  </div>
+   800→
+   801→                  <div className="space-y-2">
+   802→                    <Label htmlFor="taille">Taille</Label>
+   803→                    <Select
+   804→                      value={taille}
+   805→                      onValueChange={setTaille}
+   806→                      disabled={!couleur || taillesList.length === 0}
+   807→                    >
+   808→                      <SelectTrigger id="taille" className="h-11 w-full">
+   809→                        <SelectValue placeholder="Choisir…" />
+   810→                      </SelectTrigger>
+   811→                      <SelectContent>
+   812→                        {taillesList.map((t) => (
+   813→                          <SelectItem key={t} value={t}>
+   814→                            {t} — {tailleLabel(t)[0]}
+   815→                          </SelectItem>
+   816→                        ))}
+   817→                      </SelectContent>
+   818→                    </Select>
+   819→                  </div>
+   820→                </div>
+   821→
+   822→                {/* OF / Type / SPE */}
+   823→                <div className="grid gap-4 sm:grid-cols-2">
+   824→                  <div className="space-y-2">
+   825→                    <Label htmlFor="of">N° d&apos;OF (ordre de fabrication)</Label>
+   826→                    <Input
+   827→                      id="of"
+   828→                      value={of}
+   829→                      onChange={(e) => setOf(e.target.value)}
+   830→                      placeholder="ex. 078594"
+   831→                      className="h-11"
+   832→                      maxLength={20}
+   833→                      autoComplete="off"
+   834→                    />
+   835→                    {/* Derniers n° d'OF utilisés (reprise en un clic) */}
+   836→                    {ofsRecents.length > 0 && (
+   837→                      <div className="flex flex-wrap items-center gap-1.5">
+   838→                        <span className="text-xs text-muted-foreground">Derniers :</span>
+   839→                        {ofsRecents.map((o) => (
+   840→                          <button
+   841→                            key={o}
+   842→                            type="button"
+   843→                            onClick={() => setOf(o)}
+   844→                            className={`rounded-md border px-2 py-0.5 font-mono text-xs transition-colors hover:border-amber-500 hover:bg-amber-50 hover:text-amber-800 ${
+   845→                              o === of
+   846→                                ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
+   847→                                : "border-zinc-200 bg-white text-zinc-600"
+   848→                            }`}
+   849→                          >
+   850→                            {o}
+   851→                          </button>
+   852→                        ))}
+   853→                      </div>
+   854→                    )}
+   855→                  </div>
+   856→                  <div className="space-y-2">
+   857→                    <Label htmlFor="type">Type de produit</Label>
+   858→                    <Select value={typeValue} onValueChange={choisirType}>
+   859→                      <SelectTrigger id="type" className="h-11 w-full">
+   860→                        <SelectValue placeholder="Choisir…" />
+   861→                      </SelectTrigger>
+   862→                      <SelectContent>
+   863→                        {TYPES.map((t) => (
+   864→                          <SelectItem key={t.value} value={t.value}>
+   865→                            {t.label}
+   866→                          </SelectItem>
+   867→                        ))}
+   868→                      </SelectContent>
+   869→                    </Select>
+   870→                  </div>
+   871→                </div>
+   872→
+   873→                <div className="flex items-center justify-between rounded-lg border bg-zinc-50 p-3">
+   874→                  <div>
+   875→                    <Label htmlFor="spe" className="text-sm font-medium">
+   876→                      Mode SPE
+   877→                    </Label>
+   878→                    <p className="text-xs text-muted-foreground">
+   879→                      Code-barres calculé automatiquement (préfixe 99) — manche et
+   880→                      taille libres.
+   881→                    </p>
+   882→                  </div>
+   883→                  <Switch id="spe" checked={spe} onCheckedChange={changerSpe} />
+   884→                </div>
+   885→              </CardContent>
+   886→              <CardFooter className="flex flex-col items-stretch gap-3 border-t bg-zinc-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+   887→                {champsManquants.length > 0 ? (
+   888→                  <p className="flex items-center gap-2 text-sm text-amber-700">
+   889→                    <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+   890→                    À compléter : {champsManquants.join(", ")}
+   891→                  </p>
+   892→                ) : (
+   893→                  <p className="flex items-center gap-2 text-sm text-green-700">
+   894→                    <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+   895→                    Prêt à générer
+   896→                  </p>
+   897→                )}
+   898→                <Button
+   899→                  variant="ghost"
+   900→                  size="sm"
+   901→                  onClick={reinitialiser}
+   902→                  className="self-start sm:self-auto"
+   903→                >
+   904→                  <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+   905→                  Réinitialiser
+   906→                </Button>
+   907→              </CardFooter>
+   908→            </Card>
+   909→            </CarteAnimee>
+   910→
+   911→            {/* File d'impression (lot) */}
+   912→            <CarteAnimee delai={0.08}>
+   913→            <Card>
+   914→              <CardHeader className="pb-4">
+   915→                <CardTitle className="flex items-center justify-between gap-2 text-base">
+   916→                  <span className="flex items-center gap-2">
+   917→                    <Layers className="h-4 w-4 text-amber-600" aria-hidden="true" />
+   918→                    File d&apos;impression
+   919→                  </span>
+   920→                  <Badge variant="secondary">
+   921→                    {fileAttente.length} / {MAX_ETIQUETTES}
+   922→                  </Badge>
+   923→                </CardTitle>
+   924→                <CardDescription>
+   925→                  Ajoutez plusieurs étiquettes pour les générer en lot. Un lot de
+   926→                  N étiquettes produit un fichier .zip contenant un .nlbl par
+   927→                  étiquette, données intégrées.
+   928→                </CardDescription>
+   929→              </CardHeader>
+   930→              <CardContent className="space-y-4">
+   931→                <div className="flex flex-wrap gap-2">
+   932→                  <Button
+   933→                    variant="outline"
+   934→                    onClick={ajouterALaFile}
+   935→                    disabled={!peutGenerer || fileAttente.length >= MAX_ETIQUETTES}
+   936→                    className="h-11"
+   937→                  >
+   938→                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+   939→                    Ajouter l&apos;étiquette courante
+   940→                  </Button>
+   941→                  {fileAttente.length > 0 && (
+   942→                    <Button
+   943→                      variant="ghost"
+   944→                      onClick={() => setFileAttente([])}
+   945→                      className="h-11"
+   946→                    >
+   947→                      <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+   948→                      Vider
+   949→                    </Button>
+   950→                  )}
+   951→                </div>
+   952→
+   953→                {fileAttente.length === 0 ? (
+   954→                  <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed py-6 text-center">
+   955→                    <Layers className="h-6 w-6 text-zinc-300" aria-hidden="true" />
+   956→                    <p className="text-sm text-muted-foreground">
+   957→                      La file est vide — complétez le formulaire, puis ajoutez
+   958→                      l&apos;étiquette courante pour composer un lot.
+   959→                    </p>
+   960→                  </div>
+   961→                ) : (
+   962→                  <div className="max-h-96 overflow-y-auto rounded-lg border">
+   963→                    <ul className="divide-y">
+   964→                      {fileAttente.map((item, index) => (
+   965→                        <li
+   966→                          key={item.id}
+   967→                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-zinc-50"
+   968→                        >
+   969→                          <span className="flex min-w-0 items-center gap-3">
+   970→                            <Badge
+   971→                              variant="outline"
+   972→                              className="w-9 shrink-0 justify-center font-mono"
+   973→                            >
+   974→                              {String(index + 1).padStart(2, "0")}
+   975→                            </Badge>
+   976→                            <span className="truncate" title={item.ref}>
+   977→                              {item.ref}
+   978→                            </span>
+   979→                          </span>
+   980→                          <button
+   981→                            type="button"
+   982→                            aria-label={`Retirer ${item.ref}`}
+   983→                            className="rounded p-1 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+   984→                            onClick={() =>
+   985→                              setFileAttente((q) => q.filter((x) => x.id !== item.id))
+   986→                            }
+   987→                          >
+   988→                            <X className="h-4 w-4" aria-hidden="true" />
+   989→                          </button>
+   990→                        </li>
+   991→                      ))}
+   992→                    </ul>
+   993→                  </div>
+   994→                )}
+   995→              </CardContent>
+   996→              <CardFooter className="border-t bg-zinc-50/60 p-4">
+   997→                <Button
+   998→                  onClick={genererLot}
+   999→                  disabled={fileAttente.length === 0 || lotEnCours}
+  1000→                  className="h-11 w-full whitespace-normal bg-amber-600 text-left text-white hover:bg-amber-700 sm:w-auto"
+  1001→                >
+  1002→                  {lotEnCours ? (
+  1003→                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+  1004→                  ) : (
+  1005→                    <FileArchive className="mr-2 h-4 w-4" aria-hidden="true" />
+  1006→                  )}
+  1007→                  {lotEnCours
+  1008→                    ? "Génération du lot…"
+  1009→                    : fileAttente.length === 1
+  1010→                      ? "Générer le lot — 1 fichier .NLBL"
+  1011→                      : `Générer le lot — archive .zip de ${fileAttente.length} fichiers .NLBL`}
+  1012→                </Button>
+  1013→              </CardFooter>
+  1014→            </Card>
+  1015→            </CarteAnimee>
+  1016→          </div>
+  1017→
+  1018→          {/* ------------------------- Colonne droite ------------------------- */}
+  1019→          <div className="min-w-0 space-y-6 lg:col-span-5">
+  1020→            {/* Aperçu */}
+  1021→            <CarteAnimee delai={0.16}>
+  1022→            <Card>
+  1023→              <CardHeader className="pb-4">
+  1024→                <CardTitle className="flex items-center justify-between gap-2 text-base">
+  1025→                  <span>Aperçu de l&apos;étiquette</span>
+  1026→                  <Tooltip>
+  1027→                    <TooltipTrigger asChild>
+  1028→                      <Button
+  1029→                        variant="ghost"
+  1030→                        size="icon"
+  1031→                        aria-label="Agrandir l'aperçu de l'étiquette"
+  1032→                        disabled={!etiquette}
+  1033→                        onClick={() => setApercuGrand(true)}
+  1034→                        className="h-8 w-8 text-zinc-500 hover:text-amber-700"
+  1035→                      >
+  1036→                        <Maximize2 className="h-4 w-4" aria-hidden="true" />
+  1037→                      </Button>
+  1038→                    </TooltipTrigger>
+  1039→                    <TooltipContent>
+  1040→                      <p>Agrandir l&apos;aperçu (vérification avant impression)</p>
+  1041→                    </TooltipContent>
+  1042→                  </Tooltip>
+  1043→                </CardTitle>
+  1044→                <CardDescription>
+  1045→                  Format 55 × 35 mm — rendu identique au modèle cLEMENT2.
+  1046→                </CardDescription>
+  1047→              </CardHeader>
+  1048→              <CardContent className="space-y-4">
+  1049→                {/* Zone de découpe (repère de couteau autour de l'étiquette) */}
+  1050→                <div className="relative mx-auto w-full max-w-md">
+  1051→                  <div
+  1052→                    className="pointer-events-none absolute -inset-2.5 rounded-xl border border-dashed border-zinc-300"
+  1053→                    aria-hidden="true"
+  1054→                  >
+  1055→                    <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-[10px] font-medium uppercase tracking-widest text-zinc-400">
+  1056→                      Découpe 55 × 35 mm
+  1057→                    </span>
+  1058→                  </div>
+  1059→                <div
+  1060→                  className={`relative mx-auto w-full rounded-lg border-2 bg-white p-4 shadow-md transition-all sm:p-6 ${
+  1061→                    peutGenerer
+  1062→                      ? "border-green-600 ring-2 ring-green-600/20"
+  1063→                      : "border-zinc-300"
+  1064→                  }`}
+  1065→                  aria-label="Aperçu de l'étiquette"
+  1066→                >
+  1067→                  {etiquette ? (
+  1068→                    <div className="space-y-1 text-black">
+  1069→                      <p className="truncate text-center text-2xl font-extrabold tracking-wide sm:text-3xl">
+  1070→                        {etiquette.modele}
+  1071→                      </p>
+  1072→                      <div className="flex items-baseline justify-between text-lg font-bold sm:text-xl">
+  1073→                        <span className="truncate">{etiquette.couleur}</span>
+  1074→                        <span>{etiquette.taille}</span>
+  1075→                      </div>
+  1076→                      <div className="my-2 border-t-2 border-black" aria-hidden="true" />
+  1077→                      <p className="text-center text-base font-bold sm:text-lg">
+  1078→                        {etiquette.type}
+  1079→                      </p>
+  1080→                      {etiquette.manche && (
+  1081→                        <p className="text-center text-sm font-semibold sm:text-base">
+  1082→                          {etiquette.manche}
+  1083→                        </p>
+  1084→                      )}
+  1085→                      <div className="mt-3 flex justify-center">
+  1086→                        <Ean13Svg code={etiquette.codeBarre} />
+  1087→                      </div>
+  1088→                      <p className="mt-1 text-center text-lg font-extrabold sm:text-xl">
+  1089→                        OF: {etiquette.of || "——"}
+  1090→                      </p>
+  1091→                    </div>
+  1092→                  ) : (
+  1093→                    <div className="flex h-48 items-center justify-center rounded text-sm text-zinc-400">
+  1094→                      Sélectionnez une référence pour prévisualiser l&apos;étiquette.
+  1095→                    </div>
+  1096→                  )}
+  1097→                </div>
+  1098→                </div>
+  1099→
+  1100→                {/* Table des variables (miroir de Zebra Designer) */}
+  1101→                {etiquette && (
+  1102→                  <div className="space-y-1.5">
+  1103→                    <div className="flex items-center justify-between gap-2">
+  1104→                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+  1105→                        Variables intégrées au fichier
+  1106→                      </p>
+  1107→                      <Button
+  1108→                        variant="ghost"
+  1109→                        size="sm"
+  1110→                        onClick={copierValeurs}
+  1111→                        className="h-7 px-2 text-xs text-zinc-500 hover:text-amber-700"
+  1112→                        aria-label="Copier les 7 variables dans le presse-papiers"
+  1113→                      >
+  1114→                        {valeursCopiees ? (
+  1115→                          <Check className="mr-1 h-3.5 w-3.5 text-green-600" aria-hidden="true" />
+  1116→                        ) : (
+  1117→                          <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+  1118→                        )}
+  1119→                        {valeursCopiees ? "Copié" : "Copier"}
+  1120→                      </Button>
+  1121→                    </div>
+  1122→                  <div className="overflow-x-auto rounded-lg border">
+  1123→                    <table className="w-full text-sm">
+  1124→                      <caption className="sr-only">
+  1125→                        Variables qui seront intégrées au fichier .NLBL
+  1126→                      </caption>
+  1127→                      <tbody className="divide-y">
+  1128→                        {(
+  1129→                          [
+  1130→                            ["Modele", etiquette.modele],
+  1131→                            ["Manche", etiquette.manche || "—"],
+  1132→                            ["Taille", etiquette.taille],
+  1133→                            ["OF", etiquette.of || "—"],
+  1134→                            ["Couleur", etiquette.couleur],
+  1135→                            ["Type", etiquette.type],
+  1136→                            ["CodeBarre", etiquette.codeBarre],
+  1137→                          ] as const
+  1138→                        ).map(([invite, valeur]) => (
+  1139→                          <tr key={invite} className="hover:bg-zinc-50">
+  1140→                            <th
+  1141→                              scope="row"
+  1142→                              className="w-24 bg-zinc-50 px-3 py-1.5 text-left font-medium text-zinc-600"
+  1143→                            >
+  1144→                              {invite}
+  1145→                            </th>
+  1146→                            <td className="px-3 py-1.5 font-mono text-xs">
+  1147→                              {valeur}
+  1148→                            </td>
+  1149→                          </tr>
+  1150→                        ))}
+  1151→                      </tbody>
+  1152→                    </table>
+  1153→                  </div>
+  1154→                  </div>
+  1155→                )}
+  1156→              </CardContent>
+  1157→              <CardFooter className="flex flex-col gap-3 border-t bg-zinc-50/60 p-4">
+  1158→                <Button
+  1159→                  onClick={() =>
+  1160→                    etiquette && genererNlbl([etiquette], setGenerationEnCours)
+  1161→                  }
+  1162→                  disabled={!peutGenerer || generationEnCours}
+  1163→                  className="h-12 w-full bg-amber-600 text-base font-semibold text-white hover:bg-amber-700"
+  1164→                >
+  1165→                  {generationEnCours ? (
+  1166→                    <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+  1167→                  ) : (
+  1168→                    <FileDown className="mr-2 h-5 w-5" aria-hidden="true" />
+  1169→                  )}
+  1170→                  {generationEnCours
+  1171→                    ? "Génération en cours…"
+  1172→                    : "Générer le fichier .NLBL"}
+  1173→                </Button>
+  1174→                <p className="text-center text-xs text-muted-foreground">
+  1175→                  Les données sont intégrées au fichier : ouvrez-le dans Zebra
+  1176→                  Designer et imprimez directement — aucune importation de fichier
+  1177→                  texte. Astuce : raccourci clavier{" "}
+  1178→                  <kbd className="rounded border bg-white px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 shadow-sm">
+  1179→                    Ctrl + ⏎
+  1180→                  </kbd>
+  1181→                </p>
+  1182→                <Separator />
+  1183→                <Button
+  1184→                  variant="outline"
+  1185→                  onClick={exporterTxt}
+  1186→                  disabled={!peutGenerer}
+  1187→                  className="h-11 w-full whitespace-normal"
+  1188→                >
+  1189→                  <FileDown className="mr-2 h-4 w-4" aria-hidden="true" />
+  1190→                  Exporter le fichier .TXT (historique)
+  1191→                </Button>
+  1192→              </CardFooter>
+  1193→            </Card>
+  1194→            </CarteAnimee>
+  1195→
+  1196→            {/* Historique */}
+  1197→            <CarteAnimee delai={0.24}>
+  1198→            <Card>
+  1199→              <CardHeader className="pb-3">
+  1200→                <CardTitle className="flex items-center justify-between text-base">
+  1201→                  <span className="flex items-center gap-2">
+  1202→                    <History className="h-4 w-4 text-amber-600" aria-hidden="true" />
+  1203→                    Dernières générations
+  1204→                  </span>
+  1205→                  <Tooltip>
+  1206→                    <TooltipTrigger asChild>
+  1207→                      <Button
+  1208→                        variant="ghost"
+  1209→                        size="icon"
+  1210→                        aria-label="Rafraîchir l'historique"
+  1211→                        onClick={chargerHistorique}
+  1212→                        className="h-8 w-8"
+  1213→                      >
+  1214→                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+  1215→                      </Button>
+  1216→                    </TooltipTrigger>
+  1217→                    <TooltipContent>
+  1218→                      <p>Rafraîchir l&apos;historique</p>
+  1219→                    </TooltipContent>
+  1220→                  </Tooltip>
+  1221→                </CardTitle>
+  1222→              </CardHeader>
+  1223→              <CardContent className="space-y-3">
+  1224→                {/* Recherche locale + export CSV du journal */}
+  1225→                <div className="flex gap-2">
+  1226→                  <div className="relative min-w-0 flex-1">
+  1227→                    <Search
+  1228→                      className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+  1229→                      aria-hidden="true"
+  1230→                    />
+  1231→                    <Input
+  1232→                      value={rechercheHisto}
+  1233→                      onChange={(e) => setRechercheHisto(e.target.value)}
+  1234→                      placeholder="Filtrer le journal (nom de fichier, TXT/NLBL)…"
+  1235→                      className="h-9 pl-8 text-sm"
+  1236→                      aria-label="Filtrer le journal des générations"
+  1237→                    />
+  1238→                  </div>
+  1239→                  <Tooltip>
+  1240→                    <TooltipTrigger asChild>
+  1241→                      <Button
+  1242→                        variant="outline"
+  1243→                        size="sm"
+  1244→                        onClick={exporterCsv}
+  1245→                        disabled={csvEnCours}
+  1246→                        className="h-9 shrink-0"
+  1247→                      >
+  1248→                        {csvEnCours ? (
+  1249→                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+  1250→                        ) : (
+  1251→                          <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+  1252→                        )}
+  1253→                        CSV
+  1254→                      </Button>
+  1255→                    </TooltipTrigger>
+  1256→                    <TooltipContent>
+  1257→                      <p>Exporter tout le journal au format CSV (Excel)</p>
+  1258→                    </TooltipContent>
+  1259→                  </Tooltip>
+  1260→                </div>
+  1261→
+  1262→                {historique.length === 0 ? (
+  1263→                  <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+  1264→                    <History className="h-6 w-6 text-zinc-300" aria-hidden="true" />
+  1265→                    <p className="text-sm text-muted-foreground">
+  1266→                      Aucune génération enregistrée pour le moment.
+  1267→                    </p>
+  1268→                  </div>
+  1269→                ) : historiqueFiltre.length === 0 ? (
+  1270→                  <p className="py-4 text-center text-sm text-muted-foreground">
+  1271→                    Aucun fichier ne correspond à « {rechercheHisto} ».
+  1272→                  </p>
+  1273→                ) : (
+  1274→                  <div className="max-h-96 overflow-y-auto rounded-lg border">
+  1275→                    <ul className="divide-y">
+  1276→                      {historiqueFiltre.map((h) => (
+  1277→                        <li
+  1278→                          key={h.id}
+  1279→                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm transition-colors hover:bg-zinc-50"
+  1280→                        >
+  1281→                          <span className="flex min-w-0 items-center gap-2">
+  1282→                            <Badge
+  1283→                              className={
+  1284→                                h.kind === "NLBL"
+  1285→                                  ? "shrink-0 bg-amber-600 text-white hover:bg-amber-600"
+  1286→                                  : "shrink-0 bg-zinc-200 text-zinc-700 hover:bg-zinc-200"
+  1287→                              }
+  1288→                            >
+  1289→                              {h.kind}
+  1290→                            </Badge>
+  1291→                            {h.labelsCount > 1 && (
+  1292→                              <Badge
+  1293→                                variant="outline"
+  1294→                                className="shrink-0 border-amber-300 bg-amber-50 font-mono text-[10px] text-amber-800"
+  1295→                              >
+  1296→                                ×{h.labelsCount}
+  1297→                              </Badge>
+  1298→                            )}
+  1299→                            <span className="truncate font-mono text-xs" title={h.filename}>
+  1300→                              {h.filename}
+  1301→                            </span>
+  1302→                          </span>
+  1303→                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+  1304→                            {new Date(h.createdAt).toLocaleString("fr-FR", {
+  1305→                              day: "2-digit",
+  1306→                              month: "2-digit",
+  1307→                              hour: "2-digit",
+  1308→                              minute: "2-digit",
+  1309→                            })}
+  1310→                          </span>
+  1311→                        </li>
+  1312→                      ))}
+  1313→                    </ul>
+  1314→                  </div>
+  1315→                )}
+  1316→              </CardContent>
+  1317→            </Card>
+  1318→            </CarteAnimee>
+  1319→          </div>
+  1320→
+  1321→          {/* ------------------------- Statistiques (pleine largeur) ------------------------- */}
+  1322→          <div className="min-w-0 lg:col-span-12">
+  1323→            <CarteAnimee delai={0.32}>
+  1324→            <Card>
+  1325→              <CardHeader className="pb-4">
+  1326→                <CardTitle className="flex items-center justify-between gap-2 text-base">
+  1327→                  <span className="flex items-center gap-2">
+  1328→                    <BarChart3 className="h-4 w-4 text-amber-600" aria-hidden="true" />
+  1329→                    Activité des 7 derniers jours
+  1330→                  </span>
+  1331→                  <Tooltip>
+  1332→                    <TooltipTrigger asChild>
+  1333→                      <Button
+  1334→                        variant="ghost"
+  1335→                        size="icon"
+  1336→                        aria-label="Rafraîchir les statistiques"
+  1337→                        onClick={chargerStats}
+  1338→                        className="h-8 w-8"
+  1339→                      >
+  1340→                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+  1341→                      </Button>
+  1342→                    </TooltipTrigger>
+  1343→                    <TooltipContent>
+  1344→                      <p>Rafraîchir les statistiques</p>
+  1345→                    </TooltipContent>
+  1346→                  </Tooltip>
+  1347→                </CardTitle>
+  1348→                <CardDescription>
+  1349→                  Cumuls et répartition quotidienne des fichiers générés (fuseau
+  1350→                  Europe/Paris).
+  1351→                </CardDescription>
+  1352→              </CardHeader>
+  1353→              <CardContent className="grid gap-6 md:grid-cols-3">
+  1354→                {/* Indicateurs clés (totaux cumulés + moyenne sur 7 jours) */}
+  1355→                <div className="grid grid-cols-2 gap-3">
+  1356→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-sm">
+  1357→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+  1358→                      <FileDown className="h-4 w-4" aria-hidden="true" />
+  1359→                    </div>
+  1360→                    <div>
+  1361→                      <p className="text-xl font-bold leading-none tabular-nums">
+  1362→                        {(stats?.totalNlbl ?? 0).toLocaleString("fr-FR")}
+  1363→                      </p>
+  1364→                      <p className="mt-1 text-xs text-muted-foreground">fichiers .NLBL générés</p>
+  1365→                    </div>
+  1366→                  </div>
+  1367→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-sm">
+  1368→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+  1369→                      <FileText className="h-4 w-4" aria-hidden="true" />
+  1370→                    </div>
+  1371→                    <div>
+  1372→                      <p className="text-xl font-bold leading-none tabular-nums">
+  1373→                        {(stats?.totalTxt ?? 0).toLocaleString("fr-FR")}
+  1374→                      </p>
+  1375→                      <p className="mt-1 text-xs text-muted-foreground">fichiers .TXT exportés</p>
+  1376→                    </div>
+  1377→                  </div>
+  1378→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-green-300 hover:shadow-sm">
+  1379→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-green-100 text-green-700">
+  1380→                      <Tags className="h-4 w-4" aria-hidden="true" />
+  1381→                    </div>
+  1382→                    <div>
+  1383→                      <p className="text-xl font-bold leading-none tabular-nums">
+  1384→                        {(stats?.totalEtiquettes ?? 0).toLocaleString("fr-FR")}
+  1385→                      </p>
+  1386→                      <p className="mt-1 text-xs text-muted-foreground">étiquettes prêtes à imprimer</p>
+  1387→                    </div>
+  1388→                  </div>
+  1389→                  <div className="flex flex-col justify-between gap-2 rounded-lg border bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-sm">
+  1390→                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-orange-100 text-orange-700">
+  1391→                      <Hash className="h-4 w-4" aria-hidden="true" />
+  1392→                    </div>
+  1393→                    <div>
+  1394→                      <p className="text-xl font-bold leading-none tabular-nums">
+  1395→                        {((stats?.semaineEtiquettes ?? 0) / 7).toLocaleString("fr-FR", {
+  1396→                          maximumFractionDigits: 1,
+  1397→                        })}
+  1398→                      </p>
+  1399→                      <p className="mt-1 text-xs text-muted-foreground">étiquettes / jour (7 derniers jours)</p>
+  1400→                    </div>
+  1401→                  </div>
+  1402→                </div>
+  1403→                {/* Graphique (overflow-hidden : évite tout débordement lors d'un redimensionnement) */}
+  1404→                <div className="h-56 overflow-hidden md:col-span-2">
+  1405→                  <ResponsiveContainer width="100%" height="100%">
+  1406→                    <BarChart data={stats?.parJour ?? []} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+  1407→                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+  1408→                      <XAxis
+  1409→                        dataKey="libelle"
+  1410→                        tickLine={false}
+  1411→                        axisLine={false}
+  1412→                        fontSize={12}
+  1413→                        stroke="#71717a"
+  1414→                      />
+  1415→                      <YAxis
+  1416→                        allowDecimals={false}
+  1417→                        tickLine={false}
+  1418→                        axisLine={false}
+  1419→                        fontSize={12}
+  1420→                        stroke="#71717a"
+  1421→                      />
+  1422→                      <ChartTooltip
+  1423→                        cursor={{ fill: "rgba(217, 119, 6, 0.07)" }}
+  1424→                        contentStyle={{
+  1425→                          borderRadius: 8,
+  1426→                          border: "1px solid #e4e4e7",
+  1427→                          fontSize: 12,
+  1428→                        }}
+  1429→                        formatter={(valeur, nom) => [String(valeur), nom as string]}
+  1430→                      />
+  1431→                      <Bar
+  1432→                        dataKey="nlbl"
+  1433→                        name="Fichiers .NLBL"
+  1434→                        fill="#d97706"
+  1435→                        radius={[4, 4, 0, 0]}
+  1436→                        maxBarSize={30}
+  1437→                      />
+  1438→                      <Bar
+  1439→                        dataKey="txt"
+  1440→                        name="Fichiers .TXT"
+  1441→                        fill="#d4d4d8"
+  1442→                        radius={[4, 4, 0, 0]}
+  1443→                        maxBarSize={30}
+  1444→                      />
+  1445→                    </BarChart>
+  1446→                  </ResponsiveContainer>
+  1447→                </div>
+  1448→              </CardContent>
+  1449→            </Card>
+  1450→            </CarteAnimee>
+  1451→          </div>
+  1452→        </div>
+  1453→      </main>
+  1454→
+  1455→      {/* Aperçu agrandi (vérification finale avant impression) */}
+  1456→      <Dialog open={apercuGrand} onOpenChange={setApercuGrand}>
+  1457→        <DialogContent className="sm:max-w-lg">
+  1458→          <DialogHeader>
+  1459→            <DialogTitle>Vérification avant impression</DialogTitle>
+  1460→            <DialogDescription>
+  1461→              Contrôlez le modèle, la couleur, la taille, l&apos;OF et le
+  1462→              code-barres, puis générez le fichier .NLBL.
+  1463→            </DialogDescription>
+  1464→          </DialogHeader>
+  1465→          {etiquette ? (
+  1466→            <div
+  1467→              className={`rounded-lg border-2 bg-white p-6 text-black shadow-inner ${
+  1468→                peutGenerer ? "border-green-600" : "border-zinc-300"
+  1469→              }`}
+  1470→              aria-label="Aperçu agrandi de l'étiquette"
+  1471→            >
+  1472→              <p className="truncate text-center text-4xl font-extrabold tracking-wide">
+  1473→                {etiquette.modele}
+  1474→              </p>
+  1475→              <div className="mt-1 flex items-baseline justify-between text-2xl font-bold">
+  1476→                <span className="truncate">{etiquette.couleur}</span>
+  1477→                <span>{etiquette.taille}</span>
+  1478→              </div>
+  1479→              <div className="my-3 border-t-[3px] border-black" aria-hidden="true" />
+  1480→              <p className="text-center text-2xl font-bold">{etiquette.type}</p>
+  1481→              {etiquette.manche && (
+  1482→                <p className="text-center text-xl font-semibold">{etiquette.manche}</p>
+  1483→              )}
+  1484→              <div className="mt-5 flex justify-center">
+  1485→                <Ean13Svg code={etiquette.codeBarre} moduleW={3} />
+  1486→              </div>
+  1487→              <p className="mt-2 text-center text-2xl font-extrabold">
+  1488→                OF: {etiquette.of || "——"}
+  1489→              </p>
+  1490→            </div>
+  1491→          ) : (
+  1492→            <p className="py-8 text-center text-sm text-muted-foreground">
+  1493→              Sélectionnez une référence pour afficher l&apos;aperçu agrandi.
+  1494→            </p>
+  1495→          )}
+  1496→        </DialogContent>
+  1497→      </Dialog>
+  1498→
+  1499→      {/* Pied de page collant */}
+  1500→      <footer className="mt-auto border-t border-zinc-800 bg-zinc-900 pb-[env(safe-area-inset-bottom)] text-zinc-400">
+  1501→        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs">
+  1502→          <span>Clément Design — Générateur d&apos;étiquettes</span>
+  1503→          <span>
+  1504→            Fichiers .NLBL à données intégrées · Template cLEMENT2 · Imprimante
+  1505→            ZDesigner GK420d
+  1506→          </span>
+  1507→        </div>
+  1508→      </footer>
+  1509→    </div>
+  1510→  );
+  1511→}
+  1512→

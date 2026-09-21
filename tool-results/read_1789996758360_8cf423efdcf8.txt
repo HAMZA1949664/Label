@@ -1,0 +1,577 @@
+  2276→                            >
+  2277→                              <span
+  2278→                                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all"
+  2279→                                style={{
+  2280→                                  width: `${Math.max(
+  2281→                                    6,
+  2282→                                    Math.round((m.etiquettes / max) * 100)
+  2283→                                  )}%`,
+  2284→                                }}
+  2285→                              />
+  2286→                            </span>
+  2287→                            <span className="w-20 shrink-0 text-right tabular-nums text-muted-foreground">
+  2288→                              {m.etiquettes} ét. · {m.fichiers} f.
+  2289→                            </span>
+  2290→                          </li>
+  2291→                        );
+  2292→                      })}
+  2293→                    </ol>
+  2294→                  </div>
+  2295→                )}
+  2296→              </CardContent>
+  2297→            </Card>
+  2298→            </CarteAnimee>
+  2299→          </div>
+  2300→        </div>
+  2301→      </main>
+  2302→
+  2303→      {/* Aperçu agrandi (vérification finale avant impression) */}
+  2304→      <Dialog open={apercuGrand} onOpenChange={setApercuGrand}>
+  2305→        <DialogContent className="sm:max-w-lg">
+  2306→          <DialogHeader>
+  2307→            <DialogTitle>Vérification avant impression</DialogTitle>
+  2308→            <DialogDescription>
+  2309→              Contrôlez le modèle, la couleur, la taille, l&apos;OF et le
+  2310→              code-barres, puis générez le fichier .NLBL.
+  2311→            </DialogDescription>
+  2312→          </DialogHeader>
+  2313→          {etiquette ? (
+  2314→            <div
+  2315→              className={`rounded-lg border-2 bg-white p-6 text-black shadow-inner ${
+  2316→                peutGenerer ? "border-green-600" : "border-zinc-300 dark:border-zinc-600"
+  2317→              }`}
+  2318→              aria-label="Aperçu agrandi de l'étiquette"
+  2319→            >
+  2320→              <p className="truncate text-center text-4xl font-extrabold tracking-wide">
+  2321→                {etiquette.modele}
+  2322→              </p>
+  2323→              <div className="mt-1 flex items-baseline justify-between text-2xl font-bold">
+  2324→                <span className="truncate">{etiquette.couleur}</span>
+  2325→                <span>{etiquette.taille}</span>
+  2326→              </div>
+  2327→              <div className="my-3 border-t-[3px] border-black" aria-hidden="true" />
+  2328→              <p className="text-center text-2xl font-bold">{etiquette.type}</p>
+  2329→              {etiquette.manche && (
+  2330→                <p className="text-center text-xl font-semibold">{etiquette.manche}</p>
+  2331→              )}
+  2332→              <div className="mt-5 flex justify-center">
+  2333→                <Ean13Svg code={etiquette.codeBarre} moduleW={3} />
+  2334→              </div>
+  2335→              <p className="mt-2 text-center text-2xl font-extrabold">
+  2336→                OF: {etiquette.of || "——"}
+  2337→              </p>
+  2338→            </div>
+  2339→          ) : (
+  2340→            <p className="py-8 text-center text-sm text-muted-foreground">
+  2341→              Sélectionnez une référence pour afficher l&apos;aperçu agrandi.
+  2342→            </p>
+  2343→          )}
+  2344→        </DialogContent>
+  2345→      </Dialog>
+  2346→
+  2347→      {/* Dialog : recherche avancée dans le catalogue (multi-critères) */}
+  2348→      <Dialog open={dialogRecherche} onOpenChange={setDialogRecherche}>
+  2349→        <DialogContent className="sm:max-w-2xl">
+  2350→          <DialogHeader>
+  2351→            <DialogTitle className="flex items-center gap-2">
+  2352→              <SlidersHorizontal className="h-4 w-4 text-amber-600" aria-hidden="true" />
+  2353→              Recherche avancée dans le catalogue
+  2354→            </DialogTitle>
+  2355→            <DialogDescription>
+  2356→              Filtrez les {records.length.toLocaleString("fr-FR")} références par
+  2357→              article, couleur, manche, taille ou code-barres, puis cliquez sur un
+  2358→              résultat pour remplir automatiquement le formulaire.
+  2359→            </DialogDescription>
+  2360→          </DialogHeader>
+  2361→          <div className="space-y-3">
+  2362→            <div className="grid gap-3 sm:grid-cols-2">
+  2363→              {/* Article ou code-barres (recherche plein texte) */}
+  2364→              <div className="space-y-1.5 sm:col-span-2">
+  2365→                <Label htmlFor="rech-texte">Article ou code-barres</Label>
+  2366→                <div className="relative">
+  2367→                  <Search
+  2368→                    className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+  2369→                    aria-hidden="true"
+  2370→                  />
+  2371→                  <Input
+  2372→                    id="rech-texte"
+  2373→                    value={rechTexte}
+  2374→                    onChange={(e) => setRechTexte(e.target.value)}
+  2375→                    placeholder="ex. FIRENZE ou 37007917…"
+  2376→                    className="h-9 pl-8"
+  2377→                    autoComplete="off"
+  2378→                  />
+  2379→                </div>
+  2380→              </div>
+  2381→              {/* Couleur (liste complète du catalogue) */}
+  2382→              <div className="space-y-1.5">
+  2383→                <Label>Couleur</Label>
+  2384→                <Select
+  2385→                  value={rechCouleur}
+  2386→                  onValueChange={(v) => setRechCouleur(v === "*" ? "" : v)}
+  2387→                >
+  2388→                  <SelectTrigger className="h-9 w-full" aria-label="Filtrer par couleur">
+  2389→                    <SelectValue placeholder="Toutes les couleurs" />
+  2390→                  </SelectTrigger>
+  2391→                  <SelectContent>
+  2392→                    <SelectItem value="*">Toutes les couleurs</SelectItem>
+  2393→                    {toutesCouleurs.map((c) => (
+  2394→                      <SelectItem key={c} value={c}>
+  2395→                        {c} — {couleurLabel(c)[0]}
+  2396→                      </SelectItem>
+  2397→                    ))}
+  2398→                  </SelectContent>
+  2399→                </Select>
+  2400→              </div>
+  2401→              {/* Manche */}
+  2402→              <div className="space-y-1.5">
+  2403→                <Label>Manche</Label>
+  2404→                <Select
+  2405→                  value={rechManche}
+  2406→                  onValueChange={(v) => setRechManche(v === "*" ? "" : v)}
+  2407→                >
+  2408→                  <SelectTrigger className="h-9 w-full" aria-label="Filtrer par manche">
+  2409→                    <SelectValue placeholder="Toutes les manches" />
+  2410→                  </SelectTrigger>
+  2411→                  <SelectContent>
+  2412→                    <SelectItem value="*">Toutes les manches</SelectItem>
+  2413→                    {tousManches.map((m) => (
+  2414→                      <SelectItem key={m} value={m}>
+  2415→                        {mancheLabel(m)?.[0] ?? m}
+  2416→                      </SelectItem>
+  2417→                    ))}
+  2418→                  </SelectContent>
+  2419→                </Select>
+  2420→              </div>
+  2421→              {/* Taille */}
+  2422→              <div className="space-y-1.5">
+  2423→                <Label>Taille</Label>
+  2424→                <Select
+  2425→                  value={rechTaille}
+  2426→                  onValueChange={(v) => setRechTaille(v === "*" ? "" : v)}
+  2427→                >
+  2428→                  <SelectTrigger className="h-9 w-full" aria-label="Filtrer par taille">
+  2429→                    <SelectValue placeholder="Toutes les tailles" />
+  2430→                  </SelectTrigger>
+  2431→                  <SelectContent>
+  2432→                    <SelectItem value="*">Toutes les tailles</SelectItem>
+  2433→                    {[...toutesTailles].sort().map((t) => (
+  2434→                      <SelectItem key={t} value={t}>
+  2435→                        {t} — {tailleLabel(t)[0]}
+  2436→                      </SelectItem>
+  2437→                    ))}
+  2438→                  </SelectContent>
+  2439→                </Select>
+  2440→              </div>
+  2441→              {/* Compteur de résultats */}
+  2442→              <div className="flex items-end pb-1 text-xs text-muted-foreground">
+  2443→                {resultatsRecherche.length.toLocaleString("fr-FR")} référence(s)
+  2444→                trouvée(s)
+  2445→                {resultatsRecherche.length > MAX_RESULTATS_RECHERCHE &&
+  2446→                  ` — ${MAX_RESULTATS_RECHERCHE} premières affichées`}
+  2447→              </div>
+  2448→            </div>
+  2449→
+  2450→            {/* Résultats (clic = remplissage automatique du formulaire) */}
+  2451→            {resultatsRecherche.length === 0 ? (
+  2452→              <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed py-6 text-center">
+  2453→                <Search className="h-6 w-6 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
+  2454→                <p className="text-sm text-muted-foreground">
+  2455→                  Aucune référence ne correspond à ces critères.
+  2456→                </p>
+  2457→              </div>
+  2458→            ) : (
+  2459→              <div className="max-h-72 overflow-y-auto rounded-lg border">
+  2460→                <ul className="divide-y">
+  2461→                  {resultatsAffiches.map((r, i) => (
+  2462→                    <li
+  2463→                      key={`${r[0]}-${r[1]}-${r[2]}-${r[4]}-${i}`}
+  2464→                      className="group/result"
+  2465→                    >
+  2466→                      <button
+  2467→                        type="button"
+  2468→                        onClick={() => appliquerResultatRecherche(r)}
+  2469→                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-amber-50 focus-visible:bg-amber-50 dark:hover:bg-amber-950/30 dark:focus-visible:bg-amber-950/30"
+  2470→                        aria-label={`Utiliser ${r[0]}, ${r[1]}, ${r[2]}`}
+  2471→                      >
+  2472→                        <span className="flex min-w-0 flex-col">
+  2473→                          <span className="truncate font-medium">
+  2474→                            {r[0]} · {r[1]}
+  2475→                            {r[3] ? ` · ${mancheLabel(r[3])?.[0] ?? r[3]}` : ""}
+  2476→                          </span>
+  2477→                          <span className="font-mono text-xs text-muted-foreground">
+  2478→                            {r[4]}
+  2479→                          </span>
+  2480→                        </span>
+  2481→                        <Badge
+  2482→                          variant="outline"
+  2483→                          className="shrink-0 font-mono text-[11px]"
+  2484→                        >
+  2485→                          {r[2]} — {tailleLabel(r[2])[0]}
+  2486→                        </Badge>
+  2487→                      </button>
+  2488→                    </li>
+  2489→                  ))}
+  2490→                </ul>
+  2491→              </div>
+  2492→            )}
+  2493→          </div>
+  2494→        </DialogContent>
+  2495→      </Dialog>
+  2496→
+  2497→      {/* Dialog : préférences d'imprimante (cible intégrée aux .NLBL) */}
+  2498→      <Dialog open={dialogImprimante} onOpenChange={setDialogImprimante}>
+  2499→        <DialogContent className="sm:max-w-md">
+  2500→          <DialogHeader>
+  2501→            <DialogTitle className="flex items-center gap-2">
+  2502→              <Printer className="h-4 w-4 text-amber-600" aria-hidden="true" />
+  2503→              Préférences d&apos;imprimante
+  2504→            </DialogTitle>
+  2505→            <DialogDescription>
+  2506→              Choisit l&apos;imprimante cible intégrée aux fichiers .NLBL. Seuls les
+  2507→              réglages d&apos;impression changent — le design du modèle n&apos;est jamais
+  2508→              modifié.
+  2509→            </DialogDescription>
+  2510→          </DialogHeader>
+  2511→          <div className="space-y-4">
+  2512→            <div className="flex items-center justify-between gap-3 rounded-lg border bg-zinc-50 p-3 dark:bg-zinc-900/50">
+  2513→              <div className="min-w-0">
+  2514→                <Label htmlFor="prefs-imprimante" className="text-sm font-medium">
+  2515→                  Personnaliser l&apos;imprimante
+  2516→                </Label>
+  2517→                <p className="text-xs text-muted-foreground">
+  2518→                  Sinon, le fichier cible « ZDesigner GK420d » (valeur du modèle).
+  2519→                </p>
+  2520→              </div>
+  2521→              <Switch
+  2522→                id="prefs-imprimante"
+  2523→                checked={prefsImprimante.active}
+  2524→                onCheckedChange={(v) =>
+  2525→                  setPrefsImprimante((p) => ({ ...p, active: v }))
+  2526→                }
+  2527→              />
+  2528→            </div>
+  2529→            <div className="space-y-2">
+  2530→              <Label htmlFor="nom-imprimante">
+  2531→                Nom de l&apos;imprimante (nom exact Windows)
+  2532→              </Label>
+  2533→              <Input
+  2534→                id="nom-imprimante"
+  2535→                value={prefsImprimante.nom}
+  2536→                onChange={(e) =>
+  2537→                  setPrefsImprimante((p) => ({ ...p, nom: e.target.value }))
+  2538→                }
+  2539→                placeholder="ex. ZDesigner GK420d"
+  2540→                disabled={!prefsImprimante.active}
+  2541→                maxLength={64}
+  2542→                list="imprimantes-courantes"
+  2543→                className="h-10 font-mono text-sm"
+  2544→                autoComplete="off"
+  2545→              />
+  2546→              <datalist id="imprimantes-courantes">
+  2547→                <option value="ZDesigner GK420d" />
+  2548→                <option value="ZDesigner GK420t" />
+  2549→                <option value="ZDesigner GX430t" />
+  2550→                <option value="ZDesigner ZD420-203dpi ZPL" />
+  2551→                <option value="ZDesigner ZD621-203dpi ZPL" />
+  2552→                <option value="ZDesigner ZP 450-200dpi" />
+  2553→              </datalist>
+  2554→              <p className="text-xs text-muted-foreground">
+  2555→                Si l&apos;imprimante n&apos;existe pas sur le poste, Zebra Designer
+  2556→                proposera d&apos;en choisir une autre à l&apos;ouverture du fichier.
+  2557→              </p>
+  2558→            </div>
+  2559→            <div className="space-y-2">
+  2560→              <Label htmlFor="dpi-imprimante">Résolution (dpi) — rappel</Label>
+  2561→              <Select
+  2562→                value={prefsImprimante.dpi}
+  2563→                onValueChange={(v) => setPrefsImprimante((p) => ({ ...p, dpi: v }))}
+  2564→                disabled={!prefsImprimante.active}
+  2565→              >
+  2566→                <SelectTrigger id="dpi-imprimante" className="h-10 w-full">
+  2567→                  <SelectValue />
+  2568→                </SelectTrigger>
+  2569→                <SelectContent>
+  2570→                  <SelectItem value="203">203 dpi — séries GK / ZP</SelectItem>
+  2571→                  <SelectItem value="300">300 dpi — GX430t / ZD621-300</SelectItem>
+  2572→                  <SelectItem value="600">600 dpi — ZD621-600</SelectItem>
+  2573→                </SelectContent>
+  2574→              </Select>
+  2575→              <p className="text-xs text-muted-foreground">
+  2576→                À régler au moment de l&apos;impression dans Zebra Designer ;
+  2577→                mémorisé ici comme rappel (n&apos;affecte pas le fichier).
+  2578→              </p>
+  2579→            </div>
+  2580→          </div>
+  2581→          <div className="flex justify-end gap-2">
+  2582→            <Button
+  2583→              variant="ghost"
+  2584→              onClick={() => setDialogImprimante(false)}
+  2585→            >
+  2586→              Annuler
+  2587→            </Button>
+  2588→            <Button
+  2589→              onClick={enregistrerPrefsImprimante}
+  2590→              className="bg-amber-600 text-white hover:bg-amber-700"
+  2591→            >
+  2592→              <Check className="mr-2 h-4 w-4" aria-hidden="true" />
+  2593→              Enregistrer
+  2594→            </Button>
+  2595→          </div>
+  2596→        </DialogContent>
+  2597→      </Dialog>
+  2598→
+  2599→      {/* Dialog : contenu exact du fichier .NLBL (vérification avant impression) */}
+  2600→      <Dialog open={dialogApercuFichier} onOpenChange={setDialogApercuFichier}>
+  2601→        <DialogContent className="sm:max-w-2xl">
+  2602→          <DialogHeader>
+  2603→            <DialogTitle className="flex items-center gap-2">
+  2604→              <FileSearch className="h-4 w-4 text-amber-600" aria-hidden="true" />
+  2605→              Contenu du fichier .NLBL
+  2606→            </DialogTitle>
+  2607→            <DialogDescription>
+  2608→              Aperçu exact de ce que contiendra le fichier téléchargé : entrées de
+  2609→              l&apos;archive, variables intégrées et XML de la solution.
+  2610→            </DialogDescription>
+  2611→          </DialogHeader>
+  2612→          {apercuFichier && (
+  2613→            <div className="space-y-3">
+  2614→              <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+  2615→                <div className="rounded-lg border bg-zinc-50 p-2.5 dark:bg-zinc-900/50">
+  2616→                  <p className="font-medium text-zinc-500 dark:text-zinc-400">Entrées de l&apos;archive</p>
+  2617→                  <p className="mt-0.5 font-mono text-sm tabular-nums text-zinc-900 dark:text-zinc-100">
+  2618→                    {apercuFichier.entrees.length}
+  2619→                  </p>
+  2620→                </div>
+  2621→                <div className="rounded-lg border bg-zinc-50 p-2.5 dark:bg-zinc-900/50">
+  2622→                  <p className="font-medium text-zinc-500 dark:text-zinc-400">Chiffrement</p>
+  2623→                  <p className="mt-0.5 font-mono text-sm text-zinc-900 dark:text-zinc-100">AES-256</p>
+  2624→                </div>
+  2625→                <div className="rounded-lg border bg-zinc-50 p-2.5 dark:bg-zinc-900/50">
+  2626→                  <p className="font-medium text-zinc-500 dark:text-zinc-400">Taille estimée</p>
+  2627→                  <p className="mt-0.5 font-mono text-sm tabular-nums text-zinc-900 dark:text-zinc-100">
+  2628→                    {apercuFichier.tailleOctets.toLocaleString("fr-FR")} o
+  2629→                  </p>
+  2630→                </div>
+  2631→                <div className="rounded-lg border bg-zinc-50 p-2.5 dark:bg-zinc-900/50">
+  2632→                  <p className="font-medium text-zinc-500 dark:text-zinc-400">Imprimante cible</p>
+  2633→                  <p className="mt-0.5 truncate font-mono text-sm text-zinc-900 dark:text-zinc-100" title={apercuFichier.imprimante}>
+  2634→                    {apercuFichier.imprimante}
+  2635→                  </p>
+  2636→                </div>
+  2637→              </div>
+  2638→              <div className="overflow-hidden rounded-lg border">
+  2639→                <table className="w-full text-sm">
+  2640→                  <caption className="sr-only">
+  2641→                    Variables qui seront intégrées au fichier .NLBL
+  2642→                  </caption>
+  2643→                  <tbody className="divide-y">
+  2644→                    {apercuFichier.variables.map((v) => (
+  2645→                      <tr key={v.nom} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+  2646→                        <th
+  2647→                          scope="row"
+  2648→                          className="w-24 bg-zinc-50 px-3 py-1.5 text-left font-medium text-zinc-600 dark:bg-zinc-900/60 dark:text-zinc-300"
+  2649→                        >
+  2650→                          {v.nom}
+  2651→                        </th>
+  2652→                        <td className="px-3 py-1.5 font-mono text-xs">
+  2653→                          {v.valeur || "—"}
+  2654→                        </td>
+  2655→                      </tr>
+  2656→                    ))}
+  2657→                  </tbody>
+  2658→                </table>
+  2659→              </div>
+  2660→              <details className="group rounded-lg border">
+  2661→                <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-xs font-medium text-zinc-600 hover:text-amber-800 dark:text-zinc-300 dark:hover:text-amber-400">
+  2662→                  XML de la solution (variables intégrées, tel que lu par Zebra
+  2663→                  Designer)
+  2664→                  <span
+  2665→                    className="text-[10px] text-zinc-400 group-open:hidden"
+  2666→                    aria-hidden="true"
+  2667→                  >
+  2668→                    afficher ▾
+  2669→                  </span>
+  2670→                  <span className="hidden text-[10px] text-zinc-400 group-open:inline" aria-hidden="true">
+  2671→                    masquer ▴
+  2672→                  </span>
+  2673→                </summary>
+  2674→                <pre
+  2675→                  className="max-h-80 overflow-auto bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed text-emerald-200 scrollbar-thin scrollbar-thumb-zinc-700"
+  2676→                  aria-label="XML de la solution .NLBL"
+  2677→                >
+  2678→                  {apercuFichier.xmlSolution}
+  2679→                </pre>
+  2680→              </details>
+  2681→            </div>
+  2682→          )}
+  2683→        </DialogContent>
+  2684→      </Dialog>
+  2685→
+  2686→      {/* Dialog : mode d'emploi intégré */}
+  2687→      <Dialog open={dialogAide} onOpenChange={setDialogAide}>
+  2688→        <DialogContent className="sm:max-w-lg">
+  2689→          <DialogHeader>
+  2690→            <DialogTitle>Mode d&apos;emploi</DialogTitle>
+  2691→            <DialogDescription>
+  2692→              Impression directe avec Zebra Designer Essentials 3 — plus aucun
+  2693→              import de fichier texte.
+  2694→            </DialogDescription>
+  2695→          </DialogHeader>
+  2696→          <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+  2697→            {[
+  2698→              {
+  2699→                titre: "Étiquette simple (.NLBL)",
+  2700→                texte:
+  2701→                  "Complétez le formulaire (article, couleur, manche, taille, OF, type), puis cliquez sur « Générer le fichier .NLBL » (ou Ctrl + ⏎). Ouvrez le fichier téléchargé dans Zebra Designer : les données sont déjà intégrées — réglez la quantité et imprimez.",
+  2702→              },
+  2703→              {
+  2704→                titre: "Lot d'étiquettes (.zip)",
+  2705→                texte:
+  2706→                  "Ajoutez chaque référence à la file d'impression (jusqu'à 100), puis « Générer le lot ». Vous obtenez une archive .zip contenant un fichier .nlbl par étiquette (+ LISEZMOI.txt) : chaque fichier s'ouvre directement avec ses données.",
+  2707→              },
+  2708→              {
+  2709→                titre: "Imprimante cible",
+  2710→                texte:
+  2711→                  "Le fichier est réglé sur « ZDesigner GK420d » par défaut. Pour viser une autre imprimante, ouvrez les préférences (icône engrenage) : le nom saisi sera intégré au .NLBL sans toucher au design.",
+  2712→              },
+  2713→              {
+  2714→                titre: "Ancien flux (.TXT)",
+  2715→                texte:
+  2716→                  "Le bouton « Exporter le fichier .TXT » conserve le flux historique : format Clé=valeur à charger manuellement via « Charger… » dans Zebra Designer. Utile pour vérifier les données ou reprendre un ancien processus.",
+  2717→              },
+  2718→            ].map((etape, i) => (
+  2719→              <div key={etape.titre} className="flex gap-3">
+  2720→                <span
+  2721→                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+  2722→                  aria-hidden="true"
+  2723→                >
+  2724→                  {i + 1}
+  2725→                </span>
+  2726→                <div className="min-w-0">
+  2727→                  <p className="text-sm font-semibold">{etape.titre}</p>
+  2728→                  <p className="text-sm leading-relaxed text-muted-foreground">
+  2729→                    {etape.texte}
+  2730→                  </p>
+  2731→                </div>
+  2732→              </div>
+  2733→            ))}
+  2734→            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+  2735→              <p className="font-semibold">Bon à savoir</p>
+  2736→              <ul className="mt-1 list-disc space-y-1 pl-4">
+  2737→                <li>
+  2738→                  Les accents et caractères spéciaux sont correctement encodés
+  2739→                  (UTF-8, échappement XML).
+  2740→                </li>
+  2741→                <li>
+  2742→                  Pour N copies de la même étiquette, un seul fichier suffit :
+  2743→                  réglez « Nombre d&apos;étiquettes » dans Zebra Designer.
+  2744→                </li>
+  2745→                <li>
+  2746→                  Un doublon (même modèle + OF) dans la file est signalé avant
+  2747→                  génération.
+  2748→                </li>
+  2749→                <li>
+  2750→                  Le journal et les statistiques se rafraîchissent après chaque
+  2751→                  génération ; export CSV disponible.
+  2752→                </li>
+  2753→              </ul>
+  2754→            </div>
+  2755→          </div>
+  2756→        </DialogContent>
+  2757→      </Dialog>
+  2758→
+  2759→      {/* Dialog : confirmation de suppression d'une entrée du journal */}
+  2760→      <AlertDialog
+  2761→        open={suppressionCible !== null}
+  2762→        onOpenChange={(ouvert) => !ouvert && setSuppressionCible(null)}
+  2763→      >
+  2764→        <AlertDialogContent>
+  2765→          <AlertDialogHeader>
+  2766→            <AlertDialogTitle>Supprimer cette entrée du journal ?</AlertDialogTitle>
+  2767→            <AlertDialogDescription>
+  2768→              L&apos;entrée « {suppressionCible?.filename} » sera définitivement retirée
+  2769→              de l&apos;historique et des statistiques. Les fichiers déjà téléchargés
+  2770→              ne sont pas affectés.
+  2771→            </AlertDialogDescription>
+  2772→          </AlertDialogHeader>
+  2773→          <AlertDialogFooter>
+  2774→            <AlertDialogCancel disabled={suppressionEnCours}>Annuler</AlertDialogCancel>
+  2775→            <AlertDialogAction
+  2776→              disabled={suppressionEnCours}
+  2777→              className="bg-red-600 text-white hover:bg-red-700"
+  2778→              onClick={(e) => {
+  2779→                e.preventDefault(); // laisse le dialog ouvert pendant la requête
+  2780→                supprimerEntreeJournal();
+  2781→              }}
+  2782→            >
+  2783→              {suppressionEnCours ? (
+  2784→                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+  2785→              ) : (
+  2786→                <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+  2787→              )}
+  2788→              {suppressionEnCours ? "Suppression…" : "Supprimer"}
+  2789→            </AlertDialogAction>
+  2790→          </AlertDialogFooter>
+  2791→        </AlertDialogContent>
+  2792→      </AlertDialog>
+  2793→
+  2794→      {/* Dialog : confirmation de la purge complète du journal */}
+  2795→      <AlertDialog
+  2796→        open={purgeOuverte}
+  2797→        onOpenChange={(ouvert) => !purgeEnCours && setPurgeOuverte(ouvert)}
+  2798→      >
+  2799→        <AlertDialogContent>
+  2800→          <AlertDialogHeader>
+  2801→            <AlertDialogTitle>Vider tout le journal ?</AlertDialogTitle>
+  2802→            <AlertDialogDescription>
+  2803→              Les {historiqueTotal.toLocaleString("fr-FR")} entrées du journal seront
+  2804→              définitivement supprimées : l&apos;historique et les statistiques
+  2805→              repartiront de zéro. Les fichiers déjà téléchargés ne sont pas
+  2806→              affectés.
+  2807→            </AlertDialogDescription>
+  2808→          </AlertDialogHeader>
+  2809→          <AlertDialogFooter>
+  2810→            <AlertDialogCancel disabled={purgeEnCours}>Annuler</AlertDialogCancel>
+  2811→            <AlertDialogAction
+  2812→              disabled={purgeEnCours}
+  2813→              className="bg-red-600 text-white hover:bg-red-700"
+  2814→              onClick={(e) => {
+  2815→                e.preventDefault(); // laisse le dialog ouvert pendant la requête
+  2816→                purgerJournal();
+  2817→              }}
+  2818→            >
+  2819→              {purgeEnCours ? (
+  2820→                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+  2821→              ) : (
+  2822→                <Eraser className="mr-2 h-4 w-4" aria-hidden="true" />
+  2823→              )}
+  2824→              {purgeEnCours ? "Suppression…" : "Tout effacer"}
+  2825→            </AlertDialogAction>
+  2826→          </AlertDialogFooter>
+  2827→        </AlertDialogContent>
+  2828→      </AlertDialog>
+  2829→
+  2830→      {/* Pied de page collant */}
+  2831→      <footer className="mt-auto bg-zinc-900 pb-[env(safe-area-inset-bottom)] text-zinc-400">
+  2832→        <div
+  2833→          className="h-px w-full bg-gradient-to-r from-transparent via-amber-500/60 to-transparent"
+  2834→          aria-hidden="true"
+  2835→        />
+  2836→        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs">
+  2837→          <span>Clément Design — Générateur d&apos;étiquettes</span>
+  2838→          <span>
+  2839→            Fichiers .NLBL à données intégrées · Template cLEMENT2 · Imprimante
+  2840→            cible :{" "}
+  2841→            <strong className="font-semibold text-zinc-200">
+  2842→              {imprimanteCible ?? "ZDesigner GK420d"}
+  2843→            </strong>
+  2844→            {prefsImprimante.active && prefsImprimante.dpi &&
+  2845→              ` · ${prefsImprimante.dpi} dpi`}
+  2846→          </span>
+  2847→        </div>
+  2848→      </footer>
+  2849→    </div>
+  2850→  );
+  2851→}
+  2852→
